@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TravelMemory.Api/TravelMemory.Api.csproj" />
+    <Project Path="src/TravelMemory.AppHost/TravelMemory.AppHost.csproj" />
+    <Project Path="src/TravelMemory.Domain/TravelMemory.Domain.csproj" />
+    <Project Path="src/TravelMemory.Persistence/TravelMemory.Persistence.csproj" />
+    <Project Path="src/TravelMemory.ServiceDefaults/TravelMemory.ServiceDefaults.csproj" />
+    <Project Path="src/TravelMemory.Web/TravelMemory.Web.esproj" />
+    <Project Path="src/TravelMemory.Worker/TravelMemory.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TravelMemory.Api.Tests/TravelMemory.Api.Tests.csproj" />
+  </Folder>
+</Solution>
