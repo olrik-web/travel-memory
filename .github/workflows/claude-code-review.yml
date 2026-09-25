@@ -39,6 +39,3 @@ jobs:
           claude_args: |
             --model claude-opus-5-5
             --allowedTools "mcp__github_inline_comment__create_inline_comment"
-          # Temporary: shows Claude's tool calls in the (public) job log to verify the fix for
-          # missing review comments. Remove once a review has posted with it.
-          show_full_output: true
