@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using TravelMemory.Api.Auth;
 using TravelMemory.Api.Features.PhotoImports;
@@ -14,6 +15,10 @@ builder.AddTravelMemoryAuthentication();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<PhotoStorage>();
 builder.Services.AddSingleton<PhotoJobDispatcher>();
+// The web defaults also accept numbers sent as JSON strings, which makes every number in
+// the OpenAPI document (and the generated TypeScript types) "number or string".
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 

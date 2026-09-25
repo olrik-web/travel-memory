@@ -9,7 +9,7 @@ function formatCalendarDate(value: string) {
   return dateFormatter.format(new Date(`${value}T00:00:00Z`));
 }
 
-export function formatTripDates(startDate?: string, endDate?: string) {
+export function formatTripDates(startDate: string | null, endDate: string | null) {
   if (startDate && endDate) {
     return `${formatCalendarDate(startDate)} - ${formatCalendarDate(endDate)}`;
   }

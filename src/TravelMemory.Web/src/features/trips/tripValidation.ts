@@ -9,9 +9,10 @@ export const maxTitleLength = 200;
 export function validateTrip(request: CreateTripRequest): TripFieldErrors {
   const errors: TripFieldErrors = {};
 
-  if (!request.title.trim()) {
+  const title = request.title?.trim() ?? '';
+  if (!title) {
     errors.title = ['Enter a title for the trip.'];
-  } else if (request.title.trim().length > maxTitleLength) {
+  } else if (title.length > maxTitleLength) {
     errors.title = [`The title can be at most ${maxTitleLength} characters.`];
   }
 

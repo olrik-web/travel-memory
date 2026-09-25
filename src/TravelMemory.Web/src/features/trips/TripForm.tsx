@@ -22,8 +22,8 @@ export function TripForm({ onCreated }: TripFormProps) {
 
     const request: CreateTripRequest = {
       title,
-      startDate: startDate || undefined,
-      endDate: endDate || undefined,
+      startDate: startDate || null,
+      endDate: endDate || null,
     };
     const validationErrors = validateTrip(request);
     setFieldErrors(validationErrors);

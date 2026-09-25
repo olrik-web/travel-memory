@@ -11,7 +11,16 @@ function item(state: string, outcome = 'None'): PhotoImportItem {
     sizeBytes: 1,
     state,
     outcome,
+    capturedAtOriginalLocal: null,
+    exifOffsetMinutes: null,
+    capturedAtTimelineLocal: null,
+    errorCode: null,
+    errorMessage: null,
+    originalRetainedUntilUtc: null,
+    originalDeletedAtUtc: null,
     canRetry: false,
+    uploadUrl: null,
+    uploadExpiresAtUtc: null,
   };
 }
 
