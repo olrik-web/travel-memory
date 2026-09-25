@@ -12,6 +12,7 @@
     "lint": "oxlint .",
     "test": "vitest run",
     "typecheck": "tsc -b",
+    "generate:api": "openapi-typescript openapi.json -o src/api/schema.d.ts",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -29,6 +30,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.0",
     "jsdom": "^30.0.1",
+    "openapi-typescript": "^7.13.0",
     "oxlint": "1.80.0",
     "oxlint-tsgolint": "7.0.2001",
     "typescript": "~5.9.3",
