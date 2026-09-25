@@ -103,12 +103,12 @@ are the most transferable .NET skills and get harder to retrofit as the data mod
 
 ### Proposed scope
 
-- Fix the known worker and API bugs: unhandled exceptions stopping the worker host,
-  poison messages without a dequeue limit, duplicate redispatch messages, the in-process
-  duplicate lock, and concurrent upload completion returning 500 ([#1]–[#4]).
-- Fail recovered jobs that have used up their attempts instead of retrying them forever
-  after the worker process dies, and resend the job when complete-upload is retried after a
-  queue outage ([#32], [#33]).
+- **Done:** fix the known worker and API bugs: unhandled exceptions stopping the worker
+  host, poison messages without a dequeue limit, duplicate redispatch messages, the
+  in-process duplicate lock, and concurrent upload completion returning 500 ([#1]–[#4]).
+- **Done:** fail recovered jobs that have used up their attempts instead of retrying them
+  forever after the worker process dies, and dispatch a job promptly after a failed enqueue
+  ([#32], [#33]).
 - Propagate trace context from the API through the queue into the worker so an import is
   one distributed trace in the Aspire dashboard ([#7]).
 - **Done:** add a GitHub Actions workflow that builds, lints, type-checks, and runs the
@@ -124,8 +124,8 @@ are the most transferable .NET skills and get harder to retrofit as the data mod
 
 ### Exit criteria
 
-- The worker survives any single failing job or malformed message, and the failure is
-  visible on the job and the import item.
+- **Done:** the worker survives any single failing job or malformed message, and the
+  failure is visible on the job and the import item.
 - **Done:** CI is green and required before merging to `main`.
 - A user signs in through OIDC locally and in Azure, and all data remains owner-scoped.
 - The deployed app can create a trip and import photos, and scales to zero when idle.
