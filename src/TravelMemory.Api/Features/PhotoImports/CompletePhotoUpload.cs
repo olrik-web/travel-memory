@@ -94,7 +94,7 @@ internal static class CompletePhotoUpload
             return TypedResults.Problem(
                 statusCode: StatusCodes.Status503ServiceUnavailable,
                 title: "The photo is saved, but the processing queue is temporarily unavailable.",
-                detail: "Try completing the upload again. No new job is created.");
+                detail: "The photo will be queued for analysis automatically once the queue is available.");
         }
 
         return AcceptedBatch(batch, items, storage);

@@ -14,7 +14,7 @@ builder.AddAzureQueueServiceClient("queues");
 builder.AddTravelMemoryAuthentication();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<PhotoStorage>();
-builder.Services.AddSingleton<PhotoJobDispatcher>();
+builder.Services.AddScoped<PhotoJobDispatcher>();
 // The web defaults also accept numbers sent as JSON strings, which makes every number in
 // the OpenAPI document (and the generated TypeScript types) "number or string".
 builder.Services.ConfigureHttpJsonOptions(options =>
