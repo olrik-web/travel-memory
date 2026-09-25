@@ -274,7 +274,7 @@ internal static class PhotoImportEndpoints
                 {
                     ["file"] =
                     [
-                        "Uploaden mangler eller har en forkert størrelse. Upload filen igen.",
+                        "The upload is missing or has the wrong size. Upload the file again.",
                     ],
                 });
         }
@@ -295,8 +295,8 @@ internal static class PhotoImportEndpoints
         {
             return TypedResults.Problem(
                 statusCode: StatusCodes.Status503ServiceUnavailable,
-                title: "Fotoet er gemt, men behandlingskøen er midlertidigt utilgængelig.",
-                detail: "Prøv at afslutte uploaden igen. Der oprettes ikke et nyt job.");
+                title: "The photo is saved, but the processing queue is temporarily unavailable.",
+                detail: "Try completing the upload again. No new job is created.");
         }
 
         return TypedResults.Accepted(
@@ -322,7 +322,7 @@ internal static class PhotoImportEndpoints
             return TypedResults.ValidationProblem(
                 new Dictionary<string, string[]>
                 {
-                    ["adjustmentMinutes"] = ["Tidsforskydningen skal være mellem -24 og +24 timer."],
+                    ["adjustmentMinutes"] = ["The time adjustment must be between -24 and +24 hours."],
                 });
         }
 
@@ -370,7 +370,7 @@ internal static class PhotoImportEndpoints
                 {
                     ["timeAdjustmentMinutes"] =
                     [
-                        "Tidsforskydningen skal være mellem -24 og +24 timer.",
+                        "The time adjustment must be between -24 and +24 hours.",
                     ],
                 });
         }
@@ -392,7 +392,7 @@ internal static class PhotoImportEndpoints
             if (batch.TimeAdjustmentMinutes != request.TimeAdjustmentMinutes)
             {
                 return TypedResults.Conflict(
-                    "Batchen er allerede finaliseret med en anden tidsforskydning.");
+                    "The batch is already finalized with a different time adjustment.");
             }
 
             var pendingJobs = await dbContext.PhotoProcessingJobs
@@ -416,13 +416,13 @@ internal static class PhotoImportEndpoints
                         includeUploadGrants: false))
                 : TypedResults.Problem(
                     statusCode: StatusCodes.Status503ServiceUnavailable,
-                    title: "Behandlingskøen er midlertidigt utilgængelig.");
+                    title: "The processing queue is temporarily unavailable.");
         }
 
         if (batch.State != PhotoImportBatchState.ReadyForReview)
         {
             return TypedResults.Conflict(
-                "Batchen skal være færdiganalyseret før tidsforskydningen kan fastlåses.");
+                "The batch must finish analysis before the time adjustment can be locked.");
         }
 
         var now = timeProvider.GetUtcNow();
@@ -449,8 +449,8 @@ internal static class PhotoImportEndpoints
         {
             return TypedResults.Problem(
                 statusCode: StatusCodes.Status503ServiceUnavailable,
-                title: "Batchen er gemt, men behandlingskøen er midlertidigt utilgængelig.",
-                detail: "Finalisér igen for at genudsende de samme idempotente jobs.");
+                title: "The batch is saved, but the processing queue is temporarily unavailable.",
+                detail: "Finalize again to resend the same idempotent jobs.");
         }
 
         return TypedResults.Accepted(
@@ -486,7 +486,7 @@ internal static class PhotoImportEndpoints
         if (!PhotoImportResponseFactory.CanRetry(item))
         {
             return TypedResults.Conflict(
-                "Fejlen kan ikke genbehandles. Vælg filen igen i en ny import.");
+                "This failure cannot be retried. Select the file again in a new import.");
         }
 
         var job = await dbContext.PhotoProcessingJobs
@@ -497,7 +497,7 @@ internal static class PhotoImportEndpoints
             .FirstOrDefaultAsync(cancellationToken);
         if (job is null)
         {
-            return TypedResults.Conflict("Der findes ikke et fejlet job til filen.");
+            return TypedResults.Conflict("There is no failed job for this file.");
         }
 
         var batch = await dbContext.PhotoImportBatches.SingleAsync(
@@ -544,7 +544,7 @@ internal static class PhotoImportEndpoints
             ? TypedResults.Accepted($"/api/photo-imports/{batchId}")
             : TypedResults.Problem(
                 statusCode: StatusCodes.Status503ServiceUnavailable,
-                title: "Behandlingskøen er midlertidigt utilgængelig.");
+                title: "The processing queue is temporarily unavailable.");
     }
 
     private static async Task<IResult> GetTimelineAsync(
@@ -599,7 +599,7 @@ internal static class PhotoImportEndpoints
         var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
         if (request.ClientBatchId == Guid.Empty)
         {
-            errors["clientBatchId"] = ["ClientBatchId skal være en gyldig GUID."];
+            errors["clientBatchId"] = ["ClientBatchId must be a valid GUID."];
         }
 
         if (request.Files is null
@@ -607,7 +607,7 @@ internal static class PhotoImportEndpoints
         {
             errors["files"] =
             [
-                $"Vælg mellem 1 og {PhotoImportBatch.MaximumFileCount} fotos.",
+                $"Select between 1 and {PhotoImportBatch.MaximumFileCount} photos.",
             ];
             return errors;
         }
@@ -617,7 +617,7 @@ internal static class PhotoImportEndpoints
             .Distinct(StringComparer.Ordinal)
             .Count() != request.Files.Count)
         {
-            errors["files"] = ["Den samme filidentitet forekommer flere gange i batchen."];
+            errors["files"] = ["The same file identity appears more than once in the batch."];
         }
 
         for (var index = 0; index < request.Files.Count; index++)
@@ -629,7 +629,7 @@ internal static class PhotoImportEndpoints
             {
                 errors[$"files[{index}].clientFileId"] =
                 [
-                    "Filidentiteten skal være en SHA-256 hexværdi.",
+                    "The file identity must be a SHA-256 hex value.",
                 ];
             }
 
@@ -637,7 +637,7 @@ internal static class PhotoImportEndpoints
             {
                 errors[$"files[{index}].sizeBytes"] =
                 [
-                    "Filen skal være større end 0 byte og højst 100 MB.",
+                    "The file must be larger than 0 bytes and at most 100 MB.",
                 ];
             }
 
@@ -650,7 +650,7 @@ internal static class PhotoImportEndpoints
             {
                 errors[$"files[{index}]"] =
                 [
-                    "Kun JPEG (.jpg/.jpeg) og HEIC/HEIF (.heic/.heif) understøttes.",
+                    "Only JPEG (.jpg/.jpeg) and HEIC/HEIF (.heic/.heif) are supported.",
                 ];
             }
         }

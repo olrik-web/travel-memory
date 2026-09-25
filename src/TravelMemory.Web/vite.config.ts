@@ -12,12 +12,12 @@ export default defineConfig({
       manifest: {
         name: 'Travel Memory',
         short_name: 'Travel Memory',
-        description: 'Dine rejser samlet som personlige minder.',
+        description: 'Your trips kept as personal memories.',
         start_url: '/',
         display: 'standalone',
         background_color: '#f7f2e8',
         theme_color: '#ad4f2c',
-        lang: 'da',
+        lang: 'en',
         icons: [
           {
             src: '/icons/travel-memory-192.png',

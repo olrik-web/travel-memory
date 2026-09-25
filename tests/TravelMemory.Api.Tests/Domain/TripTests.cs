@@ -13,12 +13,12 @@ public sealed class TripTests
     {
         var trip = Trip.Create(
             OwnerId,
-            "  Sommer i Toscana  ",
+            "  Summer in Tuscany  ",
             new DateOnly(2026, 7, 4),
             new DateOnly(2026, 7, 14),
             CreatedAt);
 
-        Assert.Equal("Sommer i Toscana", trip.Title);
+        Assert.Equal("Summer in Tuscany", trip.Title);
         Assert.Equal(TimeSpan.Zero, trip.CreatedAtUtc.Offset);
         Assert.Equal(CreatedAt.ToUniversalTime(), trip.CreatedAtUtc);
     }
@@ -26,7 +26,7 @@ public sealed class TripTests
     [Fact]
     public void Create_accepts_missing_dates()
     {
-        var trip = Trip.Create(OwnerId, "En rejse uden dato", null, null, CreatedAt);
+        var trip = Trip.Create(OwnerId, "A trip without dates", null, null, CreatedAt);
 
         Assert.Null(trip.StartDate);
         Assert.Null(trip.EndDate);
@@ -37,7 +37,7 @@ public sealed class TripTests
     {
         var endDate = new DateOnly(2026, 7, 14);
 
-        var trip = Trip.Create(OwnerId, "En rejse med ukendt start", null, endDate, CreatedAt);
+        var trip = Trip.Create(OwnerId, "A trip with an unknown start", null, endDate, CreatedAt);
 
         Assert.Null(trip.StartDate);
         Assert.Equal(endDate, trip.EndDate);
@@ -60,7 +60,7 @@ public sealed class TripTests
         var exception = Assert.Throws<TripValidationException>(
             () => Trip.Create(
                 OwnerId,
-                "Omvendt rejse",
+                "Reversed trip",
                 new DateOnly(2026, 7, 14),
                 new DateOnly(2026, 7, 4),
                 CreatedAt));

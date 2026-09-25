@@ -13,13 +13,13 @@ function validate(request: CreateTripRequest): FieldErrors {
   const errors: FieldErrors = {};
 
   if (!request.title.trim()) {
-    errors.title = ['Angiv en titel for rejsen.'];
+    errors.title = ['Enter a title for the trip.'];
   } else if (request.title.trim().length > 200) {
-    errors.title = ['Titlen må højst være 200 tegn.'];
+    errors.title = ['The title can be at most 200 characters.'];
   }
 
   if (request.startDate && request.endDate && request.endDate < request.startDate) {
-    errors.endDate = ['Slutdatoen må ikke ligge før startdatoen.'];
+    errors.endDate = ['The end date cannot be before the start date.'];
   }
 
   return errors;
@@ -61,7 +61,7 @@ export function TripForm({ onCreated }: TripFormProps) {
         setSubmitError(
           requestError instanceof Error
             ? requestError.message
-            : 'Rejsen kunne ikke oprettes. Prøv igen.',
+            : 'The trip could not be created. Try again.',
         );
       }
     } finally {
@@ -72,7 +72,7 @@ export function TripForm({ onCreated }: TripFormProps) {
   return (
     <form className="trip-form" onSubmit={handleSubmit} noValidate>
       <div className="field">
-        <label htmlFor="title">Titel</label>
+        <label htmlFor="title">Title</label>
         <input
           id="title"
           name="title"
@@ -92,7 +92,7 @@ export function TripForm({ onCreated }: TripFormProps) {
 
       <div className="date-fields">
         <div className="field">
-          <label htmlFor="startDate">Startdato</label>
+          <label htmlFor="startDate">Start date</label>
           <input
             id="startDate"
             name="startDate"
@@ -103,7 +103,7 @@ export function TripForm({ onCreated }: TripFormProps) {
         </div>
 
         <div className="field">
-          <label htmlFor="endDate">Slutdato</label>
+          <label htmlFor="endDate">End date</label>
           <input
             id="endDate"
             name="endDate"
@@ -121,7 +121,7 @@ export function TripForm({ onCreated }: TripFormProps) {
         </div>
       </div>
 
-      <p className="form-hint">Datoerne er valgfrie og kan tilføjes senere.</p>
+      <p className="form-hint">Dates are optional and can be added later.</p>
 
       {submitError && (
         <div className="form-error" role="alert">
@@ -131,7 +131,7 @@ export function TripForm({ onCreated }: TripFormProps) {
 
       <div className="form-actions">
         <button className="button button-primary" type="submit" disabled={isSubmitting}>
-          {isSubmitting ? 'Gemmer...' : 'Opret rejse'}
+          {isSubmitting ? 'Saving...' : 'Create trip'}
         </button>
       </div>
     </form>

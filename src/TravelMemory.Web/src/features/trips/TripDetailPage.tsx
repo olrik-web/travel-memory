@@ -31,8 +31,8 @@ export function TripDetailPage() {
 
         setError(
           requestError instanceof ApiError && requestError.status === 404
-            ? 'Rejsen blev ikke fundet.'
-            : 'Rejsen kunne ikke hentes. Prøv igen.',
+            ? 'The trip was not found.'
+            : 'The trip could not be loaded. Try again.',
         );
       })
       .finally(() => setIsLoading(false));
@@ -50,7 +50,7 @@ export function TripDetailPage() {
       .then((timeline) => setPhotos(timeline.items))
       .catch((requestError: unknown) => {
         if (!(requestError instanceof DOMException && requestError.name === 'AbortError')) {
-          setPhotoError('Fototidslinjen kunne ikke hentes.');
+          setPhotoError('The photo timeline could not be loaded.');
         }
       });
 
@@ -60,29 +60,29 @@ export function TripDetailPage() {
   return (
     <main className="page page-narrow">
       <Link className="back-link" to="/trips">
-        <span aria-hidden="true">←</span> Alle rejser
+        <span aria-hidden="true">←</span> All trips
       </Link>
 
       {isLoading && (
         <div className="status-card" role="status">
-          Henter rejsen...
+          Loading the trip...
         </div>
       )}
 
       {(error || !tripId) && (
         <div className="status-card status-error" role="alert">
-          {error ?? 'Rejsens id mangler.'}
+          {error ?? 'The trip id is missing.'}
         </div>
       )}
 
       {trip && (
         <article className="detail-card">
-          <p className="eyebrow">Rejseminde</p>
+          <p className="eyebrow">Trip memory</p>
           <h1>{trip.title}</h1>
           <p className="detail-date">{formatTripDates(trip.startDate, trip.endDate)}</p>
           <div className="detail-actions">
             <Link className="button button-primary" to={`/trips/${trip.id}/import`}>
-              Importér fotos
+              Import photos
             </Link>
           </div>
         </article>
@@ -97,15 +97,15 @@ export function TripDetailPage() {
       {trip && photos.length === 0 && !photoError && (
         <div className="detail-placeholder">
           <span aria-hidden="true">✦</span>
-          <p>Ingen fotos endnu. Importér JPEG eller HEIC for at starte tidslinjen.</p>
+          <p>No photos yet. Import JPEG or HEIC photos to start the timeline.</p>
         </div>
       )}
 
       {photos.length > 0 && (
         <section className="photo-timeline" aria-labelledby="photo-timeline-heading">
           <div className="timeline-heading">
-            <p className="eyebrow">Kronologisk</p>
-            <h2 id="photo-timeline-heading">Fototidslinje</h2>
+            <p className="eyebrow">Chronological</p>
+            <h2 id="photo-timeline-heading">Photo timeline</h2>
           </div>
           <div className="photo-grid">
             {photos.map((photo) => (
@@ -134,7 +134,7 @@ export function TripDetailPage() {
 }
 
 function formatPhotoTime(value: string) {
-  return new Intl.DateTimeFormat('da-DK', {
+  return new Intl.DateTimeFormat('en-GB', {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value));

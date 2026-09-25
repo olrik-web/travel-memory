@@ -4,13 +4,13 @@ export function AppLayout() {
   return (
     <div className="site-shell">
       <header className="site-header">
-        <Link className="brand" to="/trips" aria-label="Travel Memory forside">
+        <Link className="brand" to="/trips" aria-label="Travel Memory home">
           <span className="brand-mark" aria-hidden="true">
             TM
           </span>
           <span>
             <strong>Travel Memory</strong>
-            <small>Dine rejser som minder</small>
+            <small>Your trips as memories</small>
           </span>
         </Link>
       </header>

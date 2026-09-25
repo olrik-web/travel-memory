@@ -43,7 +43,7 @@ public sealed class TripApiTests : IAsyncLifetime
             var createResponse = await firstClient.PostAsJsonAsync(
                 "/api/trips/",
                 new CreateTripRequest(
-                    "Sommer i Toscana",
+                    "Summer in Tuscany",
                     new DateOnly(2026, 7, 4),
                     new DateOnly(2026, 7, 14)));
 
@@ -64,7 +64,7 @@ public sealed class TripApiTests : IAsyncLifetime
             var openedTrip = Assert.IsType<TripResponse>(
                 await restartedClient.GetFromJsonAsync<TripResponse>(
                     $"/api/trips/{createdTrip.Id}"));
-            Assert.Equal("Sommer i Toscana", openedTrip.Title);
+            Assert.Equal("Summer in Tuscany", openedTrip.Title);
         }
 
         using (var secondFactory = CreateFactory(SecondOwnerId))
@@ -88,7 +88,7 @@ public sealed class TripApiTests : IAsyncLifetime
         var response = await client.PostAsJsonAsync(
             "/api/trips/",
             new CreateTripRequest(
-                "Omvendt rejse",
+                "Reversed trip",
                 new DateOnly(2026, 8, 20),
                 new DateOnly(2026, 8, 10)));
 

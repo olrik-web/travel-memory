@@ -1,4 +1,4 @@
-const dateFormatter = new Intl.DateTimeFormat('da-DK', {
+const dateFormatter = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric',
   month: 'short',
   year: 'numeric',
@@ -15,12 +15,12 @@ export function formatTripDates(startDate?: string, endDate?: string) {
   }
 
   if (startDate) {
-    return `Fra ${formatCalendarDate(startDate)}`;
+    return `From ${formatCalendarDate(startDate)}`;
   }
 
   if (endDate) {
-    return `Til ${formatCalendarDate(endDate)}`;
+    return `Until ${formatCalendarDate(endDate)}`;
   }
 
-  return 'Datoer ikke angivet';
+  return 'No dates set';
 }

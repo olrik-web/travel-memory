@@ -74,9 +74,9 @@ describe('photo import resume', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('heading', { name: 'Genoptag upload' }))
+    expect(await screen.findByRole('heading', { name: 'Resume upload' }))
       .toBeInTheDocument();
-    expect(screen.getByText(/1 filer mangler/)).toBeInTheDocument();
+    expect(screen.getByText(/1 file missing/)).toBeInTheDocument();
     expect(screen.getByText('missing.heic')).toBeInTheDocument();
     expect(getPhotoImport).toHaveBeenCalledWith(batchId, expect.any(AbortSignal));
   });

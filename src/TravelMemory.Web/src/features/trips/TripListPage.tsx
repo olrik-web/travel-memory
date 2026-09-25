@@ -23,7 +23,7 @@ export function TripListPage() {
         setError(
           requestError instanceof ApiError
             ? requestError.message
-            : 'Rejserne kunne ikke hentes. Prøv igen.',
+            : 'Your trips could not be loaded. Try again.',
         );
       })
       .finally(() => setIsLoading(false));
@@ -35,18 +35,18 @@ export function TripListPage() {
     <main className="page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Rejsearkiv</p>
-          <h1>Dine rejser</h1>
-          <p className="lede">Et roligt sted til de oplevelser, du vil huske.</p>
+          <p className="eyebrow">Trip archive</p>
+          <h1>Your trips</h1>
+          <p className="lede">A calm place for the experiences you want to remember.</p>
         </div>
         <Link className="button button-primary" to="/trips/new">
-          Ny rejse
+          New trip
         </Link>
       </div>
 
       {isLoading && (
         <div className="status-card" role="status">
-          Henter dine rejser...
+          Loading your trips...
         </div>
       )}
 
@@ -61,16 +61,16 @@ export function TripListPage() {
           <span className="empty-icon" aria-hidden="true">
             ✦
           </span>
-          <h2>Dit rejsearkiv er klar</h2>
-          <p>Opret den første rejse, du gerne vil gemme som et minde.</p>
+          <h2>Your trip archive is ready</h2>
+          <p>Create the first trip you want to keep as a memory.</p>
           <Link className="button button-primary" to="/trips/new">
-            Opret første rejse
+            Create first trip
           </Link>
         </section>
       )}
 
       {!isLoading && !error && trips.length > 0 && (
-        <ul className="trip-grid" aria-label="Rejser">
+        <ul className="trip-grid" aria-label="Trips">
           {trips.map((trip) => (
             <li key={trip.id}>
               <Link className="trip-card" to={`/trips/${trip.id}`}>
@@ -81,7 +81,7 @@ export function TripListPage() {
                   </span>
                   <strong>{trip.title}</strong>
                   <span className="trip-open">
-                    Åbn rejse <span aria-hidden="true">→</span>
+                    Open trip <span aria-hidden="true">→</span>
                   </span>
                 </span>
               </Link>
