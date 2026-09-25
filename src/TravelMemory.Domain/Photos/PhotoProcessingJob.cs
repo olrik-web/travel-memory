@@ -43,6 +43,8 @@ public sealed class PhotoProcessingJob
 
     public DateTimeOffset AvailableAtUtc { get; private set; }
 
+    public DateTimeOffset? LastDispatchedAtUtc { get; private set; }
+
     public string? LastError { get; private set; }
 
     public DateTimeOffset CreatedAtUtc { get; private set; }
@@ -72,6 +74,13 @@ public sealed class PhotoProcessingJob
         var job = Create(item, kind, createdAt);
         job.AvailableAtUtc = availableAt.ToUniversalTime();
         return job;
+    }
+
+    // Recorded before the queue message is sent, so the worker only redispatches jobs whose
+    // message was never sent for the current availability or appears to be lost.
+    public void MarkDispatched(DateTimeOffset dispatchedAt)
+    {
+        LastDispatchedAtUtc = dispatchedAt.ToUniversalTime();
     }
 
     public bool TryStart(DateTimeOffset startedAt)

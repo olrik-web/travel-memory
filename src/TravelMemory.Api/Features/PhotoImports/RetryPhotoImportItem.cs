@@ -54,6 +54,7 @@ internal static class RetryPhotoImportItem
             .ToListAsync(cancellationToken);
         var now = timeProvider.GetUtcNow();
         job.ResetForManualRetry(now);
+        job.MarkDispatched(now);
 
         // The retained original is needed again, so cancel its scheduled expiry.
         var expirationJobs = await dbContext.PhotoProcessingJobs

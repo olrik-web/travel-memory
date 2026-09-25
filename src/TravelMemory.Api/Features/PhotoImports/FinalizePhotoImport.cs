@@ -96,6 +96,7 @@ internal static class FinalizePhotoImport
         {
             item.QueueForProcessing(now);
             var job = PhotoProcessingJob.Create(item, PhotoProcessingJobKind.Process, now);
+            job.MarkDispatched(now);
             jobs.Add(job);
             dbContext.PhotoProcessingJobs.Add(job);
         }

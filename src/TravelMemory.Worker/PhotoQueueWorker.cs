@@ -23,6 +23,7 @@ internal sealed class PhotoQueueWorker(
     private static readonly TimeSpan FailedCycleDelay = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan VisibilityTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan RedispatchInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan LostMessageTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan AbandonedJobTimeout = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan IncompleteUploadRetention = TimeSpan.FromHours(24);
     private const int MaximumConcurrency = 4;
@@ -214,7 +215,7 @@ internal sealed class PhotoQueueWorker(
         }
     }
 
-    private async Task DispatchPendingJobsAsync(CancellationToken cancellationToken)
+    internal async Task DispatchPendingJobsAsync(CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
         if (now < nextDispatchAtUtc)
@@ -255,13 +256,30 @@ internal sealed class PhotoQueueWorker(
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        // A pending job needs a message if none was sent since it last became available
+        // (worker-created jobs, retries after a backoff, recovered jobs), or if the last one
+        // appears to be lost. A job waiting behind a backlog already has a message queued.
+        var lostBefore = now.Subtract(LostMessageTimeout);
         var jobs = await dbContext.PhotoProcessingJobs
             .Where(job =>
                 job.State == PhotoProcessingJobState.Pending
-                && job.AvailableAtUtc <= now)
+                && job.AvailableAtUtc <= now
+                && (job.LastDispatchedAtUtc == null
+                    || job.LastDispatchedAtUtc < job.AvailableAtUtc
+                    || job.LastDispatchedAtUtc <= lostBefore))
             .OrderBy(job => job.AvailableAtUtc)
             .Take(100)
             .ToListAsync(cancellationToken);
+
+        // Saving before sending means a failed send is only retried after the lost-message
+        // timeout, but a message is never sent for a job the database does not know was
+        // dispatched.
+        foreach (var job in jobs)
+        {
+            job.MarkDispatched(now);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         foreach (var job in jobs)
         {

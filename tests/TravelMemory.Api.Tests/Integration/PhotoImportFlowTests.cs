@@ -386,7 +386,7 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
         var lease = temporaryBlob.GetBlobLeaseClient();
         await lease.AcquireAsync(TimeSpan.FromSeconds(60));
         var afterRetention = DateTimeOffset.UtcNow.AddDays(8);
-        await ProcessJobAsync(expirationJobId, new FixedTimeProvider(afterRetention));
+        await ProcessJobAsync(expirationJobId, new ManualTimeProvider(afterRetention));
 
         await using (var context = CreateDbContext())
         {
@@ -400,12 +400,48 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
         }
 
         await lease.ReleaseAsync();
-        await ProcessJobAsync(expirationJobId, new FixedTimeProvider(afterRetention.AddHours(2)));
+        await ProcessJobAsync(expirationJobId, new ManualTimeProvider(afterRetention.AddHours(2)));
 
         Assert.False(await temporaryBlob.ExistsAsync());
         var expiredItem = Assert.Single((await GetBatchAsync(client, batch.Id)).Items);
         Assert.Equal("image_decode_failed", expiredItem.ErrorCode);
         Assert.NotNull(expiredItem.OriginalDeletedAtUtc);
+    }
+
+    [Fact]
+    public async Task Redispatches_only_jobs_without_a_recent_message()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var jpeg = CreateOrientedJpeg();
+        var batch = await CreateSingleFileBatchAsync(
+            client,
+            trip.Id,
+            "queued.jpg",
+            "image/jpeg",
+            jpeg);
+        await UploadAndCompleteAsync(client, batch.Id, Assert.Single(batch.Items), jpeg);
+        var queue = new QueueServiceClient(azurite.GetConnectionString())
+            .GetQueueClient(PhotoStorageNames.ProcessingQueue);
+        Assert.Equal(1, await CountQueueMessagesAsync(queue));
+
+        var clock = new ManualTimeProvider(DateTimeOffset.UtcNow.AddMinutes(1));
+        await using var workerServices = CreateWorkerServices(clock);
+        var worker = workerServices.GetRequiredService<PhotoQueueWorker>();
+        await worker.DispatchPendingJobsAsync(CancellationToken.None);
+        Assert.Equal(1, await CountQueueMessagesAsync(queue));
+
+        // Once the message is lost, the job is dispatched again after the timeout, and the
+        // new message again suppresses redispatch in the following cycle.
+        await queue.ClearMessagesAsync();
+        clock.UtcNow = clock.UtcNow.AddMinutes(5);
+        await worker.DispatchPendingJobsAsync(CancellationToken.None);
+        Assert.Equal(1, await CountQueueMessagesAsync(queue));
+
+        clock.UtcNow = clock.UtcNow.AddMinutes(1);
+        await worker.DispatchPendingJobsAsync(CancellationToken.None);
+        Assert.Equal(1, await CountQueueMessagesAsync(queue));
     }
 
     private TravelMemoryApplicationFactory CreateFactory() =>
@@ -419,7 +455,7 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
         return new TravelMemoryDbContext(options);
     }
 
-    private ServiceProvider CreateWorkerServices()
+    private ServiceProvider CreateWorkerServices(TimeProvider? timeProvider = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -427,7 +463,7 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
             options.UseSqlServer(databaseConnectionString));
         services.AddSingleton(new BlobServiceClient(azurite.GetConnectionString()));
         services.AddSingleton(new QueueServiceClient(azurite.GetConnectionString()));
-        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton(timeProvider ?? TimeProvider.System);
         services.AddSingleton<PhotoImageProcessor>();
         services.AddScoped<PhotoJobProcessor>();
         services.AddSingleton<PhotoQueueWorker>();
@@ -588,6 +624,9 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
         => File.ReadAllBytes(
             Path.Combine(AppContext.BaseDirectory, "Fixtures", "oriented.jpg"));
 
+    private static async Task<int> CountQueueMessagesAsync(QueueClient queue) =>
+        (await queue.PeekMessagesAsync(maxMessages: 32)).Value.Length;
+
     private static async Task<int> CountBlobsAsync(BlobContainerClient container)
     {
         var count = 0;
@@ -600,7 +639,9 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
     }
 }
 
-internal sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+internal sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
 {
-    public override DateTimeOffset GetUtcNow() => utcNow;
+    public DateTimeOffset UtcNow { get; set; } = utcNow;
+
+    public override DateTimeOffset GetUtcNow() => UtcNow;
 }

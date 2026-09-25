@@ -70,6 +70,7 @@ internal static class CompletePhotoUpload
         var now = timeProvider.GetUtcNow();
         item.QueueForAnalysis(now);
         var job = PhotoProcessingJob.Create(item, PhotoProcessingJobKind.Analyze, now);
+        job.MarkDispatched(now);
         dbContext.PhotoProcessingJobs.Add(job);
         batch.SetState(PhotoImportBatchStateCalculator.Calculate(batch, items), now);
         await dbContext.SaveChangesAsync(cancellationToken);
