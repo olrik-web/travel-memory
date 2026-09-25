@@ -4,14 +4,14 @@ on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
 
-# Én review ad gangen pr. PR; et nyt push afbryder en igangværende kørsel.
+# One review per PR at a time; a new push cancels the run in progress.
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   review:
-    # Kør kun på PR'er oprettet af repo-ejeren, så andre ikke kan bruge Claude-abonnementet.
+    # Only run on PRs opened by the repository owner, so others can't use the Claude subscription.
     if: github.event.pull_request.user.login == github.repository_owner
     runs-on: ubuntu-latest
     timeout-minutes: 30
