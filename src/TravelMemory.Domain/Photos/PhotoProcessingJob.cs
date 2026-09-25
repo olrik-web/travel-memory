@@ -128,10 +128,13 @@ public sealed class PhotoProcessingJob
         UpdatedAtUtc = resetAt.ToUniversalTime();
     }
 
+    public bool IsAbandoned(DateTimeOffset now, TimeSpan timeout) =>
+        State == PhotoProcessingJobState.Processing
+        && UpdatedAtUtc <= now.ToUniversalTime().Subtract(timeout);
+
     public bool RecoverIfAbandoned(DateTimeOffset recoveredAt, TimeSpan timeout)
     {
-        if (State != PhotoProcessingJobState.Processing
-            || UpdatedAtUtc > recoveredAt.ToUniversalTime().Subtract(timeout))
+        if (!IsAbandoned(recoveredAt, timeout))
         {
             return false;
         }

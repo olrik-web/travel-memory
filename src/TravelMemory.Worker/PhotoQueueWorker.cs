@@ -228,15 +228,19 @@ internal sealed class PhotoQueueWorker(
 
         await using var scope = scopeFactory.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TravelMemoryDbContext>();
-        var abandonedJobs = await dbContext.PhotoProcessingJobs
+        var abandonedJobIds = await dbContext.PhotoProcessingJobs
             .Where(job =>
                 job.State == PhotoProcessingJobState.Processing
                 && job.UpdatedAtUtc <= now.Subtract(AbandonedJobTimeout))
+            .Select(job => job.Id)
             .Take(100)
             .ToListAsync(cancellationToken);
-        foreach (var job in abandonedJobs)
+        foreach (var jobId in abandonedJobIds)
         {
-            job.RecoverIfAbandoned(now, AbandonedJobTimeout);
+            await using var jobScope = scopeFactory.CreateAsyncScope();
+            await jobScope.ServiceProvider
+                .GetRequiredService<PhotoJobProcessor>()
+                .RecoverAbandonedAsync(jobId, AbandonedJobTimeout, cancellationToken);
         }
 
         var activeBatches = await dbContext.PhotoImportBatches

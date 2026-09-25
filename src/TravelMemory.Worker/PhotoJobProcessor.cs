@@ -132,6 +132,47 @@ internal sealed class PhotoJobProcessor(
         }
     }
 
+    // A job still processing after the timeout lost its worker, most likely because the
+    // process died mid-job. Such a job never reaches HandleFailureAsync, so the attempt
+    // limit is enforced here; otherwise a photo that kills the worker is retried forever.
+    public async Task RecoverAbandonedAsync(
+        Guid jobId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var job = await dbContext.PhotoProcessingJobs.SingleAsync(
+            value => value.Id == jobId,
+            cancellationToken);
+        var now = timeProvider.GetUtcNow();
+        if (!job.IsAbandoned(now, timeout))
+        {
+            return;
+        }
+
+        if (job.AttemptCount < PhotoProcessingJob.MaximumAttempts)
+        {
+            job.RecoverIfAbandoned(now, timeout);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        var item = await dbContext.PhotoImportItems.SingleAsync(
+            value => value.Id == job.ImportItemId,
+            cancellationToken);
+        var batch = await dbContext.PhotoImportBatches.SingleAsync(
+            value => value.Id == job.ImportBatchId,
+            cancellationToken);
+        await HandleFailureAsync(
+            job,
+            item,
+            batch,
+            new PhotoProcessingException(
+                "processing_exhausted",
+                "Processing was interrupted repeatedly. Retry the photo, or import it again if the problem persists.",
+                isTransient: false),
+            cancellationToken);
+    }
+
     private async Task AnalyzeAsync(
         PhotoImportItem item,
         CancellationToken cancellationToken)
