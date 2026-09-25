@@ -512,6 +512,47 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
                 blobService.GetBlobContainerClient(PhotoStorageNames.TemporaryContainer)));
     }
 
+    [Fact]
+    public async Task Concurrent_upload_completions_are_accepted_with_one_analyze_job()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var jpeg = CreateOrientedJpeg();
+        var batch = await CreateSingleFileBatchAsync(
+            client,
+            trip.Id,
+            "double-click.jpg",
+            "image/jpeg",
+            jpeg);
+        var item = Assert.Single(batch.Items);
+        Assert.NotNull(item.UploadUrl);
+        using var uploadRequest = new HttpRequestMessage(HttpMethod.Put, item.UploadUrl);
+        uploadRequest.Headers.TryAddWithoutValidation("x-ms-blob-type", "BlockBlob");
+        uploadRequest.Content = new ByteArrayContent(jpeg);
+        uploadRequest.Content.Headers.ContentType = MediaTypeHeaderValue.Parse(item.ContentType);
+        using var uploadClient = new HttpClient();
+        (await uploadClient.SendAsync(uploadRequest)).EnsureSuccessStatusCode();
+
+        // Several calls make it very likely that at least two pass the AwaitingUpload
+        // check before either saves, like a client retry racing the original request.
+        var responses = await Task.WhenAll(
+            Enumerable.Range(0, 8).Select(_ => client.PostAsync(
+                $"/api/photo-imports/{batch.Id}/items/{item.Id}/complete-upload",
+                content: null)));
+
+        Assert.All(
+            responses,
+            response => Assert.Equal(HttpStatusCode.Accepted, response.StatusCode));
+        await using var context = CreateDbContext();
+        Assert.Equal(
+            1,
+            await context.PhotoProcessingJobs.CountAsync(
+                job =>
+                    job.ImportItemId == item.Id
+                    && job.Kind == PhotoProcessingJobKind.Analyze));
+    }
+
     private TravelMemoryApplicationFactory CreateFactory() =>
         new(databaseConnectionString, azurite.GetConnectionString(), OwnerId);
 
