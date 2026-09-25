@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Testcontainers.Azurite;
-using Testcontainers.MsSql;
 using TravelMemory.Api.Features.PhotoImports;
 using TravelMemory.Api.Features.Trips;
 using TravelMemory.Domain.Photos;
@@ -18,27 +17,21 @@ using TravelMemory.Worker;
 namespace TravelMemory.Api.Tests.Integration;
 
 [Collection(ContainerTestCollection.Name)]
-public sealed class PhotoImportFlowTests : IAsyncLifetime
+public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLifetime
 {
     private static readonly Guid OwnerId =
         Guid.Parse("78cb7c99-b0f4-42a8-acbb-45b800cd9fb8");
 
-    private readonly MsSqlContainer sqlServer =
-        new MsSqlBuilder("mcr.microsoft.com/mssql/server:2025-latest")
-            .Build();
+    private readonly string databaseConnectionString =
+        sqlServer.CreateDatabaseConnectionString();
     private readonly AzuriteContainer azurite =
         new AzuriteBuilder("mcr.microsoft.com/azure-storage/azurite:3.35.0")
             .WithCommand("--skipApiVersionCheck")
             .Build();
 
-    public Task InitializeAsync() =>
-        Task.WhenAll(sqlServer.StartAsync(), azurite.StartAsync());
+    public Task InitializeAsync() => azurite.StartAsync();
 
-    public async Task DisposeAsync()
-    {
-        await sqlServer.DisposeAsync();
-        await azurite.DisposeAsync();
-    }
+    public async Task DisposeAsync() => await azurite.DisposeAsync();
 
     [Fact]
     public async Task Imports_jpeg_and_heic_with_offset_deduplication_and_safe_cleanup()
@@ -244,12 +237,12 @@ public sealed class PhotoImportFlowTests : IAsyncLifetime
     }
 
     private TravelMemoryApplicationFactory CreateFactory() =>
-        new(sqlServer.GetConnectionString(), azurite.GetConnectionString(), OwnerId);
+        new(databaseConnectionString, azurite.GetConnectionString(), OwnerId);
 
     private TravelMemoryDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<TravelMemoryDbContext>()
-            .UseSqlServer(sqlServer.GetConnectionString())
+            .UseSqlServer(databaseConnectionString)
             .Options;
         return new TravelMemoryDbContext(options);
     }

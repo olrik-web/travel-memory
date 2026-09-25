@@ -2,35 +2,28 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Http;
 using Testcontainers.Azurite;
-using Testcontainers.MsSql;
 using TravelMemory.Api.Features.Trips;
 
 namespace TravelMemory.Api.Tests.Integration;
 
 [Collection(ContainerTestCollection.Name)]
-public sealed class TripApiTests : IAsyncLifetime
+public sealed class TripApiTests(SqlServerFixture sqlServer) : IAsyncLifetime
 {
     private static readonly Guid FirstOwnerId =
         Guid.Parse("ad607b30-629e-4568-95f0-d746b6bd15ca");
     private static readonly Guid SecondOwnerId =
         Guid.Parse("2650f575-a679-410a-8f2d-3a691fc22ab4");
 
-    private readonly MsSqlContainer sqlServer =
-        new MsSqlBuilder("mcr.microsoft.com/mssql/server:2025-latest")
-        .Build();
+    private readonly string databaseConnectionString =
+        sqlServer.CreateDatabaseConnectionString();
     private readonly AzuriteContainer azurite =
         new AzuriteBuilder("mcr.microsoft.com/azure-storage/azurite:3.35.0")
             .WithCommand("--skipApiVersionCheck")
             .Build();
 
-    public Task InitializeAsync() =>
-        Task.WhenAll(sqlServer.StartAsync(), azurite.StartAsync());
+    public Task InitializeAsync() => azurite.StartAsync();
 
-    public async Task DisposeAsync()
-    {
-        await sqlServer.DisposeAsync();
-        await azurite.DisposeAsync();
-    }
+    public async Task DisposeAsync() => await azurite.DisposeAsync();
 
     [Fact]
     public async Task Create_list_and_get_persist_and_remain_owner_scoped()
@@ -99,5 +92,5 @@ public sealed class TripApiTests : IAsyncLifetime
     }
 
     private TravelMemoryApplicationFactory CreateFactory(Guid ownerId) =>
-        new(sqlServer.GetConnectionString(), azurite.GetConnectionString(), ownerId);
+        new(databaseConnectionString, azurite.GetConnectionString(), ownerId);
 }
