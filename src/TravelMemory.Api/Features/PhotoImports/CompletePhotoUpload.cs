@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using TravelMemory.Api.Auth;
 using TravelMemory.Domain.Photos;
@@ -43,13 +44,7 @@ internal static class CompletePhotoUpload
 
         if (item.State != PhotoImportItemState.AwaitingUpload)
         {
-            return TypedResults.Accepted(
-                $"/api/photo-imports/{batch.Id}",
-                PhotoImportResponseFactory.Create(
-                    batch,
-                    items,
-                    storage,
-                    includeUploadGrants: false));
+            return AcceptedBatch(batch, items, storage);
         }
 
         if (!await storage.VerifyUploadAsync(
@@ -73,7 +68,26 @@ internal static class CompletePhotoUpload
         job.MarkDispatched(now);
         dbContext.PhotoProcessingJobs.Add(job);
         batch.SetState(PhotoImportBatchStateCalculator.Calculate(batch, items), now);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (
+            exception is DbUpdateConcurrencyException
+            || exception.InnerException is SqlException { Number: 2601 or 2627 })
+        {
+            // A concurrent call for the same item, such as a client retry or a double
+            // click, completed it first (item rowversion or the unique Analyze job) and
+            // dispatched its job, so answer like the idempotent path above.
+            dbContext.ChangeTracker.Clear();
+            batch = await dbContext.PhotoImportBatches.SingleAsync(
+                value => value.Id == batchId,
+                cancellationToken);
+            items = await dbContext.PhotoImportItems
+                .Where(value => value.ImportBatchId == batchId)
+                .ToListAsync(cancellationToken);
+            return AcceptedBatch(batch, items, storage);
+        }
 
         if (!await dispatcher.TryDispatchAsync(job, cancellationToken))
         {
@@ -83,12 +97,18 @@ internal static class CompletePhotoUpload
                 detail: "Try completing the upload again. No new job is created.");
         }
 
-        return TypedResults.Accepted(
+        return AcceptedBatch(batch, items, storage);
+    }
+
+    private static Accepted<PhotoImportBatchResponse> AcceptedBatch(
+        PhotoImportBatch batch,
+        List<PhotoImportItem> items,
+        PhotoStorage storage) =>
+        TypedResults.Accepted(
             $"/api/photo-imports/{batch.Id}",
             PhotoImportResponseFactory.Create(
                 batch,
                 items,
                 storage,
                 includeUploadGrants: false));
-    }
 }
