@@ -1,37 +1,20 @@
 import { type FormEvent, useState } from 'react';
 import { ApiError } from '../../api/http';
-import { createTrip } from './tripApi';
+import { useCreateTrip } from './tripQueries';
+import { maxTitleLength, type TripFieldErrors, validateTrip } from './tripValidation';
 import type { CreateTripRequest } from './types';
-
-type FieldErrors = Partial<Record<keyof CreateTripRequest, string[]>>;
 
 interface TripFormProps {
   onCreated: (tripId: string) => void;
-}
-
-function validate(request: CreateTripRequest): FieldErrors {
-  const errors: FieldErrors = {};
-
-  if (!request.title.trim()) {
-    errors.title = ['Enter a title for the trip.'];
-  } else if (request.title.trim().length > 200) {
-    errors.title = ['The title can be at most 200 characters.'];
-  }
-
-  if (request.startDate && request.endDate && request.endDate < request.startDate) {
-    errors.endDate = ['The end date cannot be before the start date.'];
-  }
-
-  return errors;
 }
 
 export function TripForm({ onCreated }: TripFormProps) {
   const [title, setTitle] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [fieldErrors, setFieldErrors] = useState<TripFieldErrors>({});
   const [submitError, setSubmitError] = useState<string>();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const createTrip = useCreateTrip();
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -42,17 +25,15 @@ export function TripForm({ onCreated }: TripFormProps) {
       startDate: startDate || undefined,
       endDate: endDate || undefined,
     };
-    const validationErrors = validate(request);
+    const validationErrors = validateTrip(request);
     setFieldErrors(validationErrors);
 
     if (Object.keys(validationErrors).length > 0) {
       return;
     }
 
-    setIsSubmitting(true);
-
     try {
-      const trip = await createTrip(request);
+      const trip = await createTrip.mutateAsync(request);
       onCreated(trip.id);
     } catch (requestError: unknown) {
       if (requestError instanceof ApiError && requestError.problem?.errors) {
@@ -64,8 +45,6 @@ export function TripForm({ onCreated }: TripFormProps) {
             : 'The trip could not be created. Try again.',
         );
       }
-    } finally {
-      setIsSubmitting(false);
     }
   }
 
@@ -78,7 +57,7 @@ export function TripForm({ onCreated }: TripFormProps) {
           name="title"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
-          maxLength={200}
+          maxLength={maxTitleLength}
           aria-describedby={fieldErrors.title ? 'title-error' : undefined}
           aria-invalid={fieldErrors.title ? true : undefined}
           autoFocus
@@ -130,8 +109,8 @@ export function TripForm({ onCreated }: TripFormProps) {
       )}
 
       <div className="form-actions">
-        <button className="button button-primary" type="submit" disabled={isSubmitting}>
-          {isSubmitting ? 'Saving...' : 'Create trip'}
+        <button className="button button-primary" type="submit" disabled={createTrip.isPending}>
+          {createTrip.isPending ? 'Saving...' : 'Create trip'}
         </button>
       </div>
     </form>

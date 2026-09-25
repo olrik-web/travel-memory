@@ -1,6 +1,8 @@
-import { render, screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
+import { focusManager } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderWithQueryClient } from '../../test/renderWithQueryClient';
 import { getPhotoImport } from './photoImportApi';
 import { PhotoImportPage } from './PhotoImportPage';
 
@@ -66,7 +68,7 @@ describe('photo import resume', () => {
       ],
     });
 
-    render(
+    renderWithQueryClient(
       <MemoryRouter initialEntries={[`/trips/${tripId}/import`]}>
         <Routes>
           <Route path="/trips/:tripId/import" element={<PhotoImportPage />} />
@@ -79,5 +81,38 @@ describe('photo import resume', () => {
     expect(screen.getByText(/1 file missing/)).toBeInTheDocument();
     expect(screen.getByText('missing.heic')).toBeInTheDocument();
     expect(getPhotoImport).toHaveBeenCalledWith(batchId, expect.any(AbortSignal));
+  });
+
+  it('forgets a stored import that can no longer be loaded', async () => {
+    const key = `travel-memory:photo-import:${tripId}`;
+    localStorage.setItem(key, JSON.stringify({ batchId, clientBatchId: crypto.randomUUID() }));
+    vi.mocked(getPhotoImport).mockRejectedValue(new Error('Not found'));
+
+    renderWithQueryClient(
+      <MemoryRouter initialEntries={[`/trips/${tripId}/import`]}>
+        <Routes>
+          <Route path="/trips/:tripId/import" element={<PhotoImportPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByText('The previous import could not be loaded. Start a new import.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Select photos' })).toBeInTheDocument();
+    expect(localStorage.getItem(key)).toBeNull();
+
+    // Regaining focus must not refetch the dead batch and flash the loading state.
+    await act(async () => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+      await Promise.resolve();
+    });
+    focusManager.setFocused(undefined);
+
+    expect(
+      screen.getByText('The previous import could not be loaded. Start a new import.'),
+    ).toBeInTheDocument();
+    expect(getPhotoImport).toHaveBeenCalledTimes(1);
   });
 });
