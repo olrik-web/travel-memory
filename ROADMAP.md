@@ -106,6 +106,9 @@ are the most transferable .NET skills and get harder to retrofit as the data mod
 - Fix the known worker and API bugs: unhandled exceptions stopping the worker host,
   poison messages without a dequeue limit, duplicate redispatch messages, the in-process
   duplicate lock, and concurrent upload completion returning 500 ([#1]–[#4]).
+- Fail recovered jobs that have used up their attempts instead of retrying them forever
+  after the worker process dies, and resend the job when complete-upload is retried after a
+  queue outage ([#32], [#33]).
 - Propagate trace context from the API through the queue into the worker so an import is
   one distributed trace in the Aspire dashboard ([#7]).
 - **Done:** add a GitHub Actions workflow that builds, lints, type-checks, and runs the
@@ -303,3 +306,5 @@ The following items are intentionally **exploratory**, not promised milestones:
 [#13]: https://github.com/olrik-web/travel-memory/issues/13
 [#14]: https://github.com/olrik-web/travel-memory/issues/14
 [#15]: https://github.com/olrik-web/travel-memory/issues/15
+[#32]: https://github.com/olrik-web/travel-memory/issues/32
+[#33]: https://github.com/olrik-web/travel-memory/issues/33
