@@ -17,9 +17,9 @@ The trip slice provides one complete core workflow:
 3. Open the trip detail page.
 4. Persist data in SQL Server across application restarts.
 
-Every trip is stored with a server-assigned `OwnerId`. Local development uses a fixed
-development identity, but the API boundary already requires authentication and scopes
-every query to the current owner.
+Every trip is stored with a server-assigned `OwnerId`. Users sign in through OpenID
+Connect, each provider identity maps to one internal owner, and every query is scoped to
+the current owner. See [Authentication](#authentication).
 
 The photo import slice adds:
 
@@ -43,6 +43,7 @@ The photo import slice adds:
 - SQL Server 2025
 - .NET Aspire with ServiceDefaults, OpenTelemetry, and health checks
 - Azurite for local Blob and Queue emulation
+- Keycloak as the local OpenID Connect provider
 - Magick.NET 14.16 for JPEG/HEIC decoding, EXIF, and orientation
 - Oxlint with type-aware TypeScript rules
 
@@ -51,7 +52,9 @@ The photo import slice adds:
 - .NET SDK 10.0.204 or a newer .NET 10 patch
 - Aspire CLI 13.5.3
 - Node.js 24.19.0
-- Docker Desktop or a compatible Docker engine
+- Docker Desktop or a compatible Docker engine with the buildx plugin. Aspire builds a
+  small tunnel image with it so that the Keycloak container can reach the dashboard on
+  the host. On Ubuntu's `docker.io` package, install it with `sudo apt install docker-buildx`.
 
 ## Run locally
 
@@ -63,10 +66,11 @@ npm ci --prefix "src\TravelMemory.Web"
 aspire start --non-interactive
 ```
 
-Open the `web` endpoint from the Aspire dashboard. The AppHost starts:
+Open the app at <http://localhost:5173>. The AppHost starts:
 
 - `sql` and the `travelmemory` database
 - `storage` with the Azurite `blobs` and `queues` services
+- `keycloak` on <http://localhost:8180> with the `travel-memory` realm
 - `api`
 - `worker`
 - `web`
@@ -74,11 +78,17 @@ Open the `web` endpoint from the Aspire dashboard. The AppHost starts:
 The API applies outstanding checked-in EF Core migrations automatically during
 Development startup.
 
+The app redirects to Keycloak to sign in. The realm in
+`src/TravelMemory.AppHost/Realms/travel-memory-realm.json` defines two local test users,
+`alice` and `bob`, with their passwords. Signing in as both is the quickest way to see
+that each user only sees their own trips.
+
 > [!NOTE]
-> `Identity:DevelopmentOwnerId` in `appsettings.Development.json` is a stable local
-> identity, not a secret. The development authentication handler cannot run outside the
-> Development environment. A real authentication provider must be added before production
-> use.
+> Keycloak and the web app use fixed ports, because the issuer URL is part of every
+> user's identity mapping and the realm only allows the web app's callback URL. The OIDC
+> client secret is an Aspire parameter that is generated on first run and stored in the
+> AppHost's user secrets. The realm reads it from an environment variable, so no secret is
+> committed.
 
 ## Test and quality checks
 
@@ -121,6 +131,34 @@ timezone. `TimeAdjustmentMinutes` is the user's signed delta for the entire batc
 `ExifOffsetMinutes` value is preserved separately. The original file and its metadata are
 never modified.
 
+## Authentication
+
+The API acts as a backend for the SPA (the BFF pattern). It runs the OpenID Connect
+authorization code flow with PKCE itself and gives the browser only an `HttpOnly`,
+`Secure`, `SameSite=Lax` session cookie. No token is ever readable by JavaScript. This
+needs no extra server, because the API already serves the SPA from the same origin. In
+development, the Vite proxy forwards `/api` and sends `X-Forwarded-Host`/`-Proto`, so
+callback URLs point at the dev server.
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/api/auth/login?returnUrl=/trips` | Start sign-in and return to a local path |
+| `POST` | `/api/auth/logout` | End the app session and the provider session |
+| `GET` | `/api/auth/me` | Get the signed-in user's display name |
+
+Unauthenticated API calls receive `401`, and the SPA then navigates to
+`/api/auth/login`. A signed-in user without a valid owner id receives `403`.
+
+On sign-in, the provider's issuer and subject are looked up in the `Users` table, and a
+row is created for a new identity. The internal `Users.Id` is the `OwnerId` on all data.
+It is stored in the session cookie, so it is resolved once per sign-in rather than on
+every request. Moving to another provider therefore only means remapping issuer and
+subject, never rewriting owned rows.
+
+Locally, the provider is Keycloak. The planned hosted provider in Azure is Microsoft
+Entra External ID, configured through the same `Authentication:Oidc:Authority`,
+`ClientId`, and `ClientSecret` settings.
+
 ## Processing and safe cleanup
 
 The database job is authoritative; a Queue message is only an idempotent wake-up signal.
@@ -158,7 +196,7 @@ The HEIC choice was verified through a technical spike in
 
 ```text
 src/
-  TravelMemory.AppHost/         Aspire resource graph
+  TravelMemory.AppHost/         Aspire resource graph and local Keycloak realm
   TravelMemory.Domain/          Trips, photo imports, jobs, and time semantics
   TravelMemory.Persistence/     EF Core mappings and migrations
   TravelMemory.ServiceDefaults/ Health, discovery, and telemetry
@@ -171,8 +209,9 @@ tests/
 
 ## Local data
 
-SQL Server and Azurite use named Docker volumes. Stop the AppHost before resetting local
-data:
+SQL Server and Azurite use named Docker volumes. Keycloak has no volume: the realm and
+its test users are imported again on every start, and their fixed user ids keep each
+user mapped to the same owner. Stop the AppHost before resetting local data:
 
 ```powershell
 aspire stop --non-interactive
@@ -186,8 +225,8 @@ docker volume rm <exact-volume-name-from-Aspire>
 
 ## Explicitly out of scope
 
-GPX/FIT and GPS matching, SignalR, AI captioning/embeddings, weather, real authentication
-and family sharing, trip/photo editing and deletion, offline trip data, and Azure
-deployment are not part of the implemented slices.
+GPX/FIT and GPS matching, SignalR, AI captioning/embeddings, weather, family sharing,
+trip/photo editing and deletion, offline trip data, and Azure deployment are not part of
+the implemented slices.
 
 For the recommended order of future work, see [ROADMAP.md](ROADMAP.md).

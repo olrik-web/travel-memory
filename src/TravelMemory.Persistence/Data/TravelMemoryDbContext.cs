@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using TravelMemory.Domain.Photos;
 using TravelMemory.Domain.Trips;
+using TravelMemory.Domain.Users;
 
 namespace TravelMemory.Persistence.Data;
 
@@ -16,6 +17,8 @@ public sealed class TravelMemoryDbContext(DbContextOptions<TravelMemoryDbContext
     public DbSet<PhotoProcessingJob> PhotoProcessingJobs => Set<PhotoProcessingJob>();
 
     public DbSet<Photo> Photos => Set<Photo>();
+
+    public DbSet<User> Users => Set<User>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using TravelMemory.Api.Auth;
+using TravelMemory.Api.Features.Auth;
 using TravelMemory.Api.Features.PhotoImports;
 using TravelMemory.Api.Features.Trips;
 using TravelMemory.Persistence.Data;
@@ -33,6 +34,11 @@ else
     app.UseExceptionHandler();
 }
 
+if (app.Environment.IsDevelopment())
+{
+    app.UseForwardedHeaders();
+}
+
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -49,6 +55,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+app.MapAuthEndpoints();
 app.MapTripEndpoints();
 app.MapPhotoImportEndpoints();
 app.MapDefaultEndpoints();
