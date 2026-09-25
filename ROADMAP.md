@@ -105,25 +105,25 @@ are the most transferable .NET skills and get harder to retrofit as the data mod
 
 - Fix the known worker and API bugs: unhandled exceptions stopping the worker host,
   poison messages without a dequeue limit, duplicate redispatch messages, the in-process
-  duplicate lock, and concurrent upload completion returning 500.
+  duplicate lock, and concurrent upload completion returning 500 ([#1]–[#4]).
 - Propagate trace context from the API through the queue into the worker so an import is
-  one distributed trace in the Aspire dashboard.
-- Add a GitHub Actions workflow that builds, lints, type-checks, and runs the .NET and
-  frontend tests on every push.
-- Add one end-to-end test with `Aspire.Hosting.Testing` that runs the real resource graph.
+  one distributed trace in the Aspire dashboard ([#7]).
+- **Done:** add a GitHub Actions workflow that builds, lints, type-checks, and runs the
+  .NET and frontend tests on every push ([#13]).
+- Add one end-to-end test with `Aspire.Hosting.Testing` that runs the real resource graph
+  ([#10]).
 - Replace the Development authentication handler with OIDC. Use Keycloak through the Aspire
   integration locally and an equivalent hosted provider in Azure. Keep the `OwnerId`
-  boundary unchanged.
+  boundary unchanged ([#14], [#5]).
 - Deploy to Azure Container Apps Consumption, Azure SQL, Blob Storage, and Storage Queue
   with `aspire deploy` or `azd`. Use HTTPS-only SAS tokens and managed identity outside
-  Development.
-- Define how migrations run outside Development.
+  Development, and define how migrations run there ([#15]).
 
 ### Exit criteria
 
 - The worker survives any single failing job or malformed message, and the failure is
   visible on the job and the import item.
-- CI is green and required before merging to `main`.
+- **Done:** CI is green and required before merging to `main`.
 - A user signs in through OIDC locally and in Azure, and all data remains owner-scoped.
 - The deployed app can create a trip and import photos, and scales to zero when idle.
 - A documented monthly cost budget and alert exist.
@@ -295,11 +295,11 @@ The following items are intentionally **exploratory**, not promised milestones:
 - Keep external-source attribution, cache policy, model version, prompt version, and cost
   evidence wherever those concepts apply.
 
-## Next session: start V2.5
-
-- Create GitHub issues for the known bugs, refactorings, and chores from the first code
-  review, labelled `bug`, `refactor`, `enhancement`, `test`, or `chore`.
-- Fix the worker robustness bugs first, each with a regression test.
-- Add the GitHub Actions CI workflow so later changes are verified automatically.
-- Spike Keycloak through Aspire and decide the hosted identity provider for Azure.
-- Spike `aspire deploy`/`azd` to Azure Container Apps and document the cost budget.
+[#1]: https://github.com/olrik-web/travel-memory/issues/1
+[#4]: https://github.com/olrik-web/travel-memory/issues/4
+[#5]: https://github.com/olrik-web/travel-memory/issues/5
+[#7]: https://github.com/olrik-web/travel-memory/issues/7
+[#10]: https://github.com/olrik-web/travel-memory/issues/10
+[#13]: https://github.com/olrik-web/travel-memory/issues/13
+[#14]: https://github.com/olrik-web/travel-memory/issues/14
+[#15]: https://github.com/olrik-web/travel-memory/issues/15
