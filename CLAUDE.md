@@ -46,6 +46,8 @@ Organize by feature (vertical slices), not by technical layer.
 
 ## Git
 
+- Never push to `main`; it is protected. Work on a branch and open a PR, which is
+  squash-merged.
 - Bugs, refactors, and chores are tracked as GitHub issues. Keep one issue per PR and
   reference it in the description (`Closes #N`).
 - Commit as `olrik-web <molrik@outlook.com>` (set `git config user.name` and
@@ -56,3 +58,4 @@ Organize by feature (vertical slices), not by technical layer.
   under ~60 characters: `✨ feat(trips): add end date validation`.
   ✨ feat · 🐛 fix · ♻️ refactor · ⚡️ perf · ✅ test · 📝 docs · 🎨 style ·
   🔧 chore/config · 👷 ci · 📦️ build · 🔒️ security · ⏪️ revert
+- PR titles use the same format, since the title becomes the squash commit on `main`.
