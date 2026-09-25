@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 
 namespace TravelMemory.Api.Auth;
 
@@ -25,7 +26,14 @@ internal static class AuthenticationExtensions
             .AddScheme<AuthenticationSchemeOptions, DevelopmentAuthenticationHandler>(
                 DevelopmentAuthenticationHandler.SchemeName,
                 _ => { });
-        builder.Services.AddAuthorization();
+        // Every endpoint reads the owner id, so a user without a valid one is rejected before
+        // a handler runs instead of failing inside it with a 500. The policy forbids (403)
+        // rather than challenges (401), because signing in again yields the same identity.
+        builder.Services.AddAuthorizationBuilder()
+            .SetDefaultPolicy(new AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context => HttpCurrentUser.TryGetOwnerId(context.User, out _))
+                .Build());
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
     }

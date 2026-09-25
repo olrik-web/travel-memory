@@ -8,9 +8,8 @@ internal sealed class HttpCurrentUser(IHttpContextAccessor httpContextAccessor) 
     {
         get
         {
-            var ownerIdValue = httpContextAccessor.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier);
-
-            if (!Guid.TryParse(ownerIdValue, out var ownerId) || ownerId == Guid.Empty)
+            var user = httpContextAccessor.HttpContext?.User;
+            if (user is null || !TryGetOwnerId(user, out var ownerId))
             {
                 throw new UnauthorizedAccessException("The authenticated user has no valid owner identifier.");
             }
@@ -18,4 +17,8 @@ internal sealed class HttpCurrentUser(IHttpContextAccessor httpContextAccessor) 
             return ownerId;
         }
     }
+
+    public static bool TryGetOwnerId(ClaimsPrincipal user, out Guid ownerId) =>
+        Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out ownerId)
+        && ownerId != Guid.Empty;
 }
