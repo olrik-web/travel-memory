@@ -13,6 +13,7 @@ builder.AddAzureQueueServiceClient("queues");
 builder.AddTravelMemoryAuthentication();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<PhotoStorage>();
+builder.Services.AddSingleton<PhotoJobDispatcher>();
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 
