@@ -553,6 +553,61 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
                     && job.Kind == PhotoProcessingJobKind.Analyze));
     }
 
+    [Fact]
+    public async Task Fails_abandoned_jobs_that_have_used_up_their_attempts()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var jpeg = CreateOrientedJpeg();
+        var batches = new List<PhotoImportBatchResponse>();
+        foreach (var fileName in new[] { "crashes-every-time.jpg", "crashed-once.jpg" })
+        {
+            var batch = await CreateSingleFileBatchAsync(
+                client,
+                trip.Id,
+                fileName,
+                "image/jpeg",
+                jpeg);
+            await UploadAndCompleteAsync(client, batch.Id, Assert.Single(batch.Items), jpeg);
+            batches.Add(batch);
+        }
+
+        var startedAt = DateTimeOffset.UtcNow;
+        var exhaustedItemId = Assert.Single(batches[0].Items).Id;
+        var recoverableItemId = Assert.Single(batches[1].Items).Id;
+        await SimulateCrashedAttemptsAsync(
+            exhaustedItemId,
+            PhotoProcessingJob.MaximumAttempts,
+            startedAt);
+        await SimulateCrashedAttemptsAsync(recoverableItemId, 1, startedAt);
+
+        var clock = new ManualTimeProvider(startedAt.AddHours(2));
+        await using var workerServices = CreateWorkerServices(clock);
+        await workerServices.GetRequiredService<PhotoQueueWorker>()
+            .DispatchPendingJobsAsync(CancellationToken.None);
+
+        var exhaustedItem = Assert.Single((await GetBatchAsync(client, batches[0].Id)).Items);
+        Assert.Equal(nameof(PhotoImportItemState.Failed), exhaustedItem.State);
+        Assert.Equal("processing_exhausted", exhaustedItem.ErrorCode);
+        Assert.True(exhaustedItem.CanRetry);
+        Assert.NotNull(exhaustedItem.OriginalRetainedUntilUtc);
+        await using var context = CreateDbContext();
+        var exhaustedJobs = await context.PhotoProcessingJobs
+            .Where(job => job.ImportItemId == exhaustedItemId)
+            .ToListAsync();
+        Assert.Equal(
+            PhotoProcessingJobState.Failed,
+            Assert.Single(exhaustedJobs, job => job.Kind == PhotoProcessingJobKind.Analyze)
+                .State);
+        Assert.Contains(
+            exhaustedJobs,
+            job => job.Kind == PhotoProcessingJobKind.ExpireFailedOriginal);
+        var recoveredJob = await context.PhotoProcessingJobs.SingleAsync(
+            job => job.ImportItemId == recoverableItemId);
+        Assert.Equal(PhotoProcessingJobState.Pending, recoveredJob.State);
+    }
+
     private TravelMemoryApplicationFactory CreateFactory() =>
         new(databaseConnectionString, azurite.GetConnectionString(), OwnerId);
 
@@ -563,6 +618,33 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
             .AddInterceptors(interceptors)
             .Options;
         return new TravelMemoryDbContext(options);
+    }
+
+    // Each attempt starts the job and then loses its worker, like a process that is killed
+    // mid-job, so the job is only recovered by the abandoned-job timeout.
+    private async Task SimulateCrashedAttemptsAsync(
+        Guid itemId,
+        int attempts,
+        DateTimeOffset firstStartedAt)
+    {
+        await using var context = CreateDbContext();
+        var job = await context.PhotoProcessingJobs.SingleAsync(
+            value => value.ImportItemId == itemId);
+        var item = await context.PhotoImportItems.SingleAsync(value => value.Id == itemId);
+        var startedAt = firstStartedAt;
+        for (var attempt = 1; attempt <= attempts; attempt++)
+        {
+            if (attempt > 1)
+            {
+                startedAt = startedAt.AddMinutes(11);
+                Assert.True(job.RecoverIfAbandoned(startedAt, TimeSpan.FromMinutes(10)));
+            }
+
+            Assert.True(job.TryStart(startedAt));
+        }
+
+        item.MarkAnalyzing(startedAt);
+        await context.SaveChangesAsync();
     }
 
     private async Task<Guid> GetProcessJobIdAsync(Guid itemId)
