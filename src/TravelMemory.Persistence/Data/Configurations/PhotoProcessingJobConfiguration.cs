@@ -14,6 +14,7 @@ internal sealed class PhotoProcessingJobConfiguration : IEntityTypeConfiguration
         builder.Property(value => value.State).HasConversion<string>().HasMaxLength(16);
         builder.Property(value => value.LastError).HasMaxLength(2000);
         builder.Property(value => value.AvailableAtUtc).HasPrecision(7);
+        builder.Property(value => value.LastDispatchedAtUtc).HasPrecision(7);
         builder.Property(value => value.CreatedAtUtc).HasPrecision(7);
         builder.Property(value => value.UpdatedAtUtc).HasPrecision(7);
         builder.Property(value => value.Version).IsRowVersion();
