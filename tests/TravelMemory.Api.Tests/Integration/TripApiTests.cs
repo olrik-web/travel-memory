@@ -1,6 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
+using System.Text.Encodings.Web;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Testcontainers.Azurite;
 using TravelMemory.Api.Features.Trips;
 
@@ -91,6 +97,46 @@ public sealed class TripApiTests(SqlServerFixture sqlServer) : IAsyncLifetime
         Assert.Contains("endDate", problem.Errors.Keys);
     }
 
+    [Fact]
+    public async Task Forbids_a_user_without_a_valid_owner_identifier()
+    {
+        using var factory = new TravelMemoryApplicationFactory(
+            databaseConnectionString,
+            azurite.GetConnectionString(),
+            FirstOwnerId,
+            services => services
+                .AddAuthentication(OwnerlessAuthenticationHandler.SchemeName)
+                .AddScheme<AuthenticationSchemeOptions, OwnerlessAuthenticationHandler>(
+                    OwnerlessAuthenticationHandler.SchemeName,
+                    _ => { }));
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/trips/");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     private TravelMemoryApplicationFactory CreateFactory(Guid ownerId) =>
         new(databaseConnectionString, azurite.GetConnectionString(), ownerId);
+}
+
+// Authenticates a user whose identity has no usable owner id, like a token from an
+// identity provider that lacks the expected subject claim.
+internal sealed class OwnerlessAuthenticationHandler(
+    IOptionsMonitor<AuthenticationSchemeOptions> options,
+    ILoggerFactory logger,
+    UrlEncoder encoder)
+    : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+{
+    public const string SchemeName = "Ownerless";
+
+    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        var identity = new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "not-a-guid")],
+            SchemeName);
+        return Task.FromResult(
+            AuthenticateResult.Success(
+                new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName)));
+    }
 }
