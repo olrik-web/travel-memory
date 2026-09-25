@@ -97,8 +97,35 @@ internal sealed class PhotoJobProcessor(
                 batch,
                 new PhotoProcessingException(
                     "temporary_failure",
-                    "En midlertidig filfejl opstod. Fotoet genbehandles automatisk.",
+                    "A temporary file error occurred. The photo will be reprocessed automatically.",
                     isTransient: true,
+                    exception),
+                cancellationToken);
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            // The exception may have left half-applied changes in the change tracker, such as
+            // a rejected insert, so reload the entities before recording the failure. It is
+            // not retried automatically because it would most likely fail the same way; the
+            // retained original lets the user retry it manually.
+            dbContext.ChangeTracker.Clear();
+            job = await dbContext.PhotoProcessingJobs.SingleAsync(
+                value => value.Id == jobId,
+                cancellationToken);
+            item = await dbContext.PhotoImportItems.SingleAsync(
+                value => value.Id == job.ImportItemId,
+                cancellationToken);
+            batch = await dbContext.PhotoImportBatches.SingleAsync(
+                value => value.Id == job.ImportBatchId,
+                cancellationToken);
+            await HandleFailureAsync(
+                job,
+                item,
+                batch,
+                new PhotoProcessingException(
+                    "unexpected_error",
+                    "An unexpected error occurred while processing the photo. Try again later.",
+                    isTransient: false,
                     exception),
                 cancellationToken);
         }

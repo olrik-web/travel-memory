@@ -20,11 +20,13 @@ internal sealed class PhotoQueueWorker(
     : BackgroundService
 {
     private static readonly TimeSpan EmptyQueueDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan FailedCycleDelay = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan VisibilityTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan RedispatchInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan AbandonedJobTimeout = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan IncompleteUploadRetention = TimeSpan.FromHours(24);
     private const int MaximumConcurrency = 4;
+    private const int MaximumDequeueCount = 5;
     private DateTimeOffset nextDispatchAtUtc = DateTimeOffset.MinValue;
 
     private QueueClient Queue =>
@@ -36,27 +38,42 @@ internal sealed class PhotoQueueWorker(
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            await DispatchPendingJobsAsync(stoppingToken);
-            var messages = (await Queue.ReceiveMessagesAsync(
-                maxMessages: 8,
-                visibilityTimeout: VisibilityTimeout,
-                cancellationToken: stoppingToken)).Value;
-
-            if (messages.Length == 0)
+            // An exception escaping ExecuteAsync stops the whole host, so a failing cycle,
+            // such as a SQL or storage outage, is logged and the loop tries again shortly.
+            try
             {
-                await Task.Delay(EmptyQueueDelay, stoppingToken);
-                continue;
+                await RunCycleAsync(stoppingToken);
             }
-
-            await Parallel.ForEachAsync(
-                messages,
-                new ParallelOptions
-                {
-                    MaxDegreeOfParallelism = MaximumConcurrency,
-                    CancellationToken = stoppingToken,
-                },
-                ProcessMessageAsync);
+            catch (Exception exception) when (!stoppingToken.IsCancellationRequested)
+            {
+                logger.LogError(exception, "Photo queue worker cycle failed; retrying shortly.");
+                await Task.Delay(FailedCycleDelay, stoppingToken);
+            }
         }
+    }
+
+    private async Task RunCycleAsync(CancellationToken stoppingToken)
+    {
+        await DispatchPendingJobsAsync(stoppingToken);
+        var messages = (await Queue.ReceiveMessagesAsync(
+            maxMessages: 8,
+            visibilityTimeout: VisibilityTimeout,
+            cancellationToken: stoppingToken)).Value;
+
+        if (messages.Length == 0)
+        {
+            await Task.Delay(EmptyQueueDelay, stoppingToken);
+            return;
+        }
+
+        await Parallel.ForEachAsync(
+            messages,
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = MaximumConcurrency,
+                CancellationToken = stoppingToken,
+            },
+            ProcessMessageAsync);
     }
 
     private async Task ExpireIncompleteUploadsAsync(CancellationToken cancellationToken)
@@ -105,6 +122,42 @@ internal sealed class PhotoQueueWorker(
         QueueMessage message,
         CancellationToken cancellationToken)
     {
+        // One failing message must not cancel the others in the same batch or stop the
+        // worker. The message stays in the queue and becomes visible again after the
+        // visibility timeout, so the dequeue limit below bounds how often it is retried.
+        try
+        {
+            await HandleMessageAsync(message, cancellationToken);
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogError(
+                exception,
+                "Unexpected error while handling photo queue message {MessageId}; it will be retried after the visibility timeout.",
+                message.MessageId);
+        }
+    }
+
+    private async Task HandleMessageAsync(
+        QueueMessage message,
+        CancellationToken cancellationToken)
+    {
+        // Deleting a poison message loses no work: the database job is authoritative, and a
+        // job that is still pending is dispatched again with a fresh message.
+        if (message.DequeueCount > MaximumDequeueCount)
+        {
+            logger.LogError(
+                "Discarding photo queue message {MessageId} after {DequeueCount} delivery attempts: {MessageText}",
+                message.MessageId,
+                message.DequeueCount,
+                message.MessageText);
+            await Queue.DeleteMessageAsync(
+                message.MessageId,
+                message.PopReceipt,
+                cancellationToken);
+            return;
+        }
+
         PhotoQueueMessage? payload;
         try
         {

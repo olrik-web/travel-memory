@@ -78,8 +78,11 @@ internal static class PhotoImportResponseFactory
                 item.State is PhotoImportItemState.Failed
                     or PhotoImportItemState.CleanupFailed));
 
+    // Reprocessing needs the retained original, so a failed item can only be retried until
+    // its retention expires. A cleanup retry only deletes the original and is always safe.
     public static bool CanRetry(PhotoImportItem item) =>
         item.State == PhotoImportItemState.CleanupFailed
         || item.State == PhotoImportItemState.Failed
-        && item.ErrorCode is "temporary_failure" or "processing_exhausted";
+        && item.OriginalDeletedAtUtc is null
+        && item.ErrorCode is "temporary_failure" or "processing_exhausted" or "unexpected_error";
 }
