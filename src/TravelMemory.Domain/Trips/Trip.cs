@@ -73,16 +73,16 @@ public sealed class Trip
 
         if (string.IsNullOrWhiteSpace(trimmedTitle))
         {
-            errors["title"] = ["Angiv en titel for rejsen."];
+            errors["title"] = ["Enter a title for the trip."];
         }
         else if (trimmedTitle.Length > MaxTitleLength)
         {
-            errors["title"] = [$"Titlen må højst være {MaxTitleLength} tegn."];
+            errors["title"] = [$"The title can be at most {MaxTitleLength} characters."];
         }
 
         if (startDate.HasValue && endDate.HasValue && endDate < startDate)
         {
-            errors["endDate"] = ["Slutdatoen må ikke ligge før startdatoen."];
+            errors["endDate"] = ["The end date cannot be before the start date."];
         }
 
         return errors;

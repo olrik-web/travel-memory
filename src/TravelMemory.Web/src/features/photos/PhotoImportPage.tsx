@@ -47,22 +47,26 @@ function readStoredImport(tripId: string): StoredImport | undefined {
 
 function describeState(item: PhotoImportItem) {
   const descriptions: Record<string, string> = {
-    AwaitingUpload: 'Venter på upload',
-    QueuedForAnalysis: 'Venter på analyse',
-    Analyzing: 'Læser EXIF og kontrollerer dublet',
-    ReadyForReview: 'Klar til tids-preview',
-    QueuedForProcessing: 'Venter på behandling',
-    Processing: 'Opretter webkopi og thumbnail',
-    CleanupPending: 'Verificeret - rydder originalen op',
-    Succeeded: item.outcome === 'Duplicate' ? 'Dublet - ikke importeret igen' : 'Importeret',
-    Failed: 'Kunne ikke behandles',
-    CleanupFailed: 'Importeret, men oprydning kræver handling',
+    AwaitingUpload: 'Waiting for upload',
+    QueuedForAnalysis: 'Waiting for analysis',
+    Analyzing: 'Reading EXIF and checking for duplicates',
+    ReadyForReview: 'Ready for time preview',
+    QueuedForProcessing: 'Waiting for processing',
+    Processing: 'Creating web copy and thumbnail',
+    CleanupPending: 'Verified - cleaning up the original',
+    Succeeded: item.outcome === 'Duplicate' ? 'Duplicate - not imported again' : 'Imported',
+    Failed: 'Could not be processed',
+    CleanupFailed: 'Imported, but cleanup needs attention',
   };
   return descriptions[item.state] ?? item.state;
 }
 
+function formatFileCount(count: number) {
+  return count === 1 ? '1 file' : `${count} files`;
+}
+
 function formatLocalDateTime(value: string) {
-  return new Intl.DateTimeFormat('da-DK', {
+  return new Intl.DateTimeFormat('en-GB', {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value));
@@ -108,7 +112,7 @@ export function PhotoImportPage() {
         }
 
         localStorage.removeItem(storageKey(tripId));
-        setError('Den tidligere import kunne ikke hentes. Start en ny import.');
+        setError('The previous import could not be loaded. Start a new import.');
       });
 
     return () => controller.abort();
@@ -124,7 +128,7 @@ export function PhotoImportPage() {
       void refreshBatch(batch.id, controller.signal).catch(
         (requestError: unknown) => {
           if (!(requestError instanceof DOMException && requestError.name === 'AbortError')) {
-            setError('Status kunne ikke opdateres. Forbindelsen forsøges igen.');
+            setError('The status could not be updated. Retrying.');
           }
         },
       );
@@ -150,7 +154,7 @@ export function PhotoImportPage() {
     }
 
     if (files.length > 500) {
-      setError('Vælg højst 500 fotos ad gangen.');
+      setError('Select at most 500 photos at a time.');
       return;
     }
 
@@ -204,8 +208,8 @@ export function PhotoImportPage() {
       if (uploadItems.length === 0) {
         setError(
           activeBatch.counts.awaitingUpload > 0
-            ? 'Ingen af de valgte filer matcher de uploads, der mangler.'
-            : 'Alle filer i batchen er allerede uploadet.',
+            ? 'None of the selected files match the missing uploads.'
+            : 'All files in the batch have already been uploaded.',
         );
         return;
       }
@@ -224,7 +228,7 @@ export function PhotoImportPage() {
           ? requestError.message
           : requestError instanceof Error
             ? requestError.message
-            : 'Fotoimporten kunne ikke startes.',
+            : 'The photo import could not be started.',
       );
     } finally {
       setIsUploading(false);
@@ -243,7 +247,7 @@ export function PhotoImportPage() {
       setError(
         requestError instanceof Error
           ? requestError.message
-          : 'Tids-preview kunne ikke hentes.',
+          : 'The time preview could not be loaded.',
       );
     }
   }
@@ -262,7 +266,7 @@ export function PhotoImportPage() {
       setError(
         requestError instanceof Error
           ? requestError.message
-          : 'Importen kunne ikke finaliseres.',
+          : 'The import could not be finalized.',
       );
     } finally {
       setIsFinalizing(false);
@@ -282,7 +286,7 @@ export function PhotoImportPage() {
       setError(
         requestError instanceof Error
           ? requestError.message
-          : 'Filen kunne ikke genbehandles.',
+          : 'The file could not be retried.',
       );
     }
   }
@@ -299,20 +303,20 @@ export function PhotoImportPage() {
   }
 
   if (!tripId) {
-    return <main className="page">Rejsens id mangler.</main>;
+    return <main className="page">The trip id is missing.</main>;
   }
 
   return (
     <main className="page page-import">
       <Link className="back-link" to={`/trips/${tripId}`}>
-        <span aria-hidden="true">←</span> Tilbage til rejsen
+        <span aria-hidden="true">←</span> Back to the trip
       </Link>
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Fotoimport</p>
-          <h1>Tilføj rejseminder</h1>
+          <p className="eyebrow">Photo import</p>
+          <h1>Add trip memories</h1>
           <p className="lede">
-            JPEG og HEIC uploades direkte til et privat midlertidigt lager.
+            JPEG and HEIC photos are uploaded directly to private temporary storage.
           </p>
         </div>
       </div>
@@ -325,20 +329,20 @@ export function PhotoImportPage() {
 
       {isLoading && (
         <div className="status-card" role="status">
-          Henter importstatus...
+          Loading import status...
         </div>
       )}
 
       {!isLoading && (!batch || awaitingUpload.length > 0) && (
         <section className="import-panel">
-          <h2>{batch ? 'Genoptag upload' : 'Vælg fotos'}</h2>
+          <h2>{batch ? 'Resume upload' : 'Select photos'}</h2>
           <p>
             {batch
-              ? `${awaitingUpload.length} filer mangler. Vælg dem igen; allerede uploadede filer springes over.`
-              : 'Vælg op til 500 JPEG- eller HEIC-filer. Fire filer uploades ad gangen.'}
+              ? `${formatFileCount(awaitingUpload.length)} missing. Select them again; files already uploaded are skipped.`
+              : 'Select up to 500 JPEG or HEIC files. Four files are uploaded at a time.'}
           </p>
           <label className="button button-primary file-picker">
-            {isUploading ? 'Uploader...' : batch ? 'Vælg manglende filer' : 'Vælg fotos'}
+            {isUploading ? 'Uploading...' : batch ? 'Select missing files' : 'Select photos'}
             <input
               type="file"
               accept=".jpg,.jpeg,.heic,.heif,image/jpeg,image/heic,image/heif"
@@ -352,28 +356,28 @@ export function PhotoImportPage() {
 
       {batch && (
         <>
-          <section className="import-summary" aria-label="Importstatus">
-            <strong>{batch.counts.total} filer</strong>
-            <span>{batch.counts.awaitingUpload} venter på upload</span>
-            <span>{batch.counts.analyzing} analyseres</span>
-            <span>{batch.counts.ready} klar</span>
-            <span>{batch.counts.processing} behandles</span>
-            <span>{batch.counts.succeeded} importeret</span>
-            <span>{batch.counts.duplicates} dubletter</span>
-            <span>{batch.counts.failed} fejl</span>
+          <section className="import-summary" aria-label="Import status">
+            <strong>{formatFileCount(batch.counts.total)}</strong>
+            <span>{batch.counts.awaitingUpload} awaiting upload</span>
+            <span>{batch.counts.analyzing} analyzing</span>
+            <span>{batch.counts.ready} ready</span>
+            <span>{batch.counts.processing} processing</span>
+            <span>{batch.counts.succeeded} imported</span>
+            <span>{batch.counts.duplicates} duplicates</span>
+            <span>{batch.counts.failed} failed</span>
           </section>
 
           {batch.state === 'ReadyForReview' && (
             <section className="import-panel time-review">
               <div>
-                <p className="eyebrow">Tidslinje</p>
-                <h2>Kontrollér kameraets tid</h2>
+                <p className="eyebrow">Timeline</p>
+                <h2>Check the camera time</h2>
                 <p>
-                  Forskydningen gemmes separat. Fotoets EXIF-tid og originalfil ændres ikke.
+                  The adjustment is stored separately. The photo's EXIF time and original file are not changed.
                 </p>
               </div>
               <div className="offset-controls">
-                <label htmlFor="adjustmentMinutes">Tidsforskydning i minutter</label>
+                <label htmlFor="adjustmentMinutes">Time adjustment in minutes</label>
                 <input
                   id="adjustmentMinutes"
                   type="number"
@@ -383,11 +387,11 @@ export function PhotoImportPage() {
                   value={adjustmentMinutes}
                   onChange={(event) => setAdjustmentMinutes(event.target.valueAsNumber || 0)}
                 />
-                <small>Eksempel: -60 flytter kameraets tid én time tilbage.</small>
+                <small>Example: -60 moves the camera time back one hour.</small>
               </div>
               <div className="form-actions import-actions">
                 <button className="button button-secondary" type="button" onClick={() => void handlePreview()}>
-                  Vis preview
+                  Show preview
                 </button>
                 <button
                   className="button button-primary"
@@ -395,7 +399,7 @@ export function PhotoImportPage() {
                   onClick={() => void handleFinalize()}
                   disabled={!preview || isFinalizing}
                 >
-                  {isFinalizing ? 'Starter behandling...' : 'Godkend og behandl'}
+                  {isFinalizing ? 'Starting processing...' : 'Approve and process'}
                 </button>
               </div>
               {preview && (
@@ -415,7 +419,7 @@ export function PhotoImportPage() {
             </section>
           )}
 
-          <ul className="import-items" aria-label="Filstatus">
+          <ul className="import-items" aria-label="File status">
             {batch.items.map((item) => (
               <li key={item.id}>
                 <div>
@@ -424,7 +428,7 @@ export function PhotoImportPage() {
                   {item.errorMessage && <p className="field-error">{item.errorMessage}</p>}
                   {item.originalRetainedUntilUtc && (
                     <p className="retention-note">
-                      Midlertidig original beholdes til{' '}
+                      Temporary original kept until{' '}
                       {formatLocalDateTime(item.originalRetainedUntilUtc)}.
                     </p>
                   )}
@@ -435,7 +439,7 @@ export function PhotoImportPage() {
                     type="button"
                     onClick={() => void handleRetry(item.id)}
                   >
-                    Prøv igen
+                    Try again
                   </button>
                 )}
               </li>
@@ -445,10 +449,10 @@ export function PhotoImportPage() {
           {terminalStates.has(batch.state) && (
             <div className="import-complete">
               <Link className="button button-primary" to={`/trips/${tripId}`}>
-                Se fototidslinjen
+                View the photo timeline
               </Link>
               <button className="button button-secondary" type="button" onClick={startNewBatch}>
-                Start ny import
+                Start a new import
               </button>
             </div>
           )}
@@ -472,7 +476,7 @@ async function uploadFile(batchId: string, item: PhotoImportItem, file: File) {
 
   if (!response.ok) {
     throw new Error(
-      `${item.fileName}: upload fejlede med status ${response.status}. Kontrollér forbindelsen og vælg filen igen.`,
+      `${item.fileName}: upload failed with status ${response.status}. Check your connection and select the file again.`,
     );
   }
 

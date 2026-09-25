@@ -7,12 +7,12 @@ export function NewTripPage() {
   return (
     <main className="page page-narrow">
       <Link className="back-link" to="/trips">
-        <span aria-hidden="true">←</span> Alle rejser
+        <span aria-hidden="true">←</span> All trips
       </Link>
       <section className="form-card">
-        <p className="eyebrow">Nyt rejseminde</p>
-        <h1>Opret en rejse</h1>
-        <p className="lede">Start med det vigtigste. Resten af minderne kan komme senere.</p>
+        <p className="eyebrow">New trip memory</p>
+        <h1>Create a trip</h1>
+        <p className="lede">Start with the essentials. The rest of the memories can come later.</p>
         <TripForm onCreated={(tripId) => void navigate(`/trips/${tripId}`)} />
       </section>
     </main>

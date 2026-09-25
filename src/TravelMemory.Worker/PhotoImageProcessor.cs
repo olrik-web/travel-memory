@@ -40,7 +40,7 @@ internal sealed class PhotoImageProcessor
         {
             throw new PhotoProcessingException(
                 "capture_time_missing",
-                "Fotoet mangler en gyldig EXIF capture time. Eksportér fotoet med metadata og importér det igen.",
+                "The photo has no valid EXIF capture time. Export the photo with its metadata and import it again.",
                 isTransient: false);
         }
 
@@ -98,7 +98,7 @@ internal sealed class PhotoImageProcessor
                 image.Dispose();
                 throw new PhotoProcessingException(
                     "image_too_large",
-                    "Fotoets pixelstørrelse er for stor. Eksportér en mindre kopi og importér den igen.",
+                    "The photo's pixel dimensions are too large. Export a smaller copy and import it again.",
                     isTransient: false);
             }
 
@@ -107,7 +107,7 @@ internal sealed class PhotoImageProcessor
                 image.Dispose();
                 throw new PhotoProcessingException(
                     "unsupported_format",
-                    "Filens indhold er ikke et understøttet JPEG- eller HEIC-foto.",
+                    "The file content is not a supported JPEG or HEIC photo.",
                     isTransient: false);
             }
 
@@ -117,7 +117,7 @@ internal sealed class PhotoImageProcessor
         {
             throw new PhotoProcessingException(
                 "image_decode_failed",
-                "Fotoet kunne ikke afkodes. Kontrollér at filen ikke er beskadiget, og importér den igen.",
+                "The photo could not be decoded. Check that the file is not damaged and import it again.",
                 isTransient: false,
                 exception);
         }

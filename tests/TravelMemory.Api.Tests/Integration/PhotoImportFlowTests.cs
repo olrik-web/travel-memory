@@ -175,7 +175,7 @@ public sealed class PhotoImportFlowTests : IAsyncLifetime
         Assert.Equal(nameof(PhotoImportBatchState.CompletedWithErrors), failedBatch.State);
         var failedItem = Assert.Single(failedBatch.Items);
         Assert.Equal("image_decode_failed", failedItem.ErrorCode);
-        Assert.Contains("beskadiget", failedItem.ErrorMessage);
+        Assert.Contains("damaged", failedItem.ErrorMessage);
         Assert.NotNull(failedItem.OriginalRetainedUntilUtc);
         Assert.InRange(
             failedItem.OriginalRetainedUntilUtc.Value - DateTimeOffset.UtcNow,
@@ -297,7 +297,7 @@ public sealed class PhotoImportFlowTests : IAsyncLifetime
         var response = await client.PostAsJsonAsync(
             "/api/trips/",
             new CreateTripRequest(
-                "Fotorejse",
+                "Photo trip",
                 new DateOnly(2026, 8, 1),
                 new DateOnly(2026, 8, 20)));
         response.EnsureSuccessStatusCode();

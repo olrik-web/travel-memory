@@ -84,7 +84,7 @@ internal sealed class PhotoJobProcessor(
                 batch,
                 new PhotoProcessingException(
                     "temporary_failure",
-                    "Lageret svarede ikke. Fotoet genbehandles automatisk.",
+                    "Storage did not respond. The photo will be reprocessed automatically.",
                     isTransient: true,
                     exception),
                 cancellationToken);
@@ -324,7 +324,7 @@ internal sealed class PhotoJobProcessor(
             {
                 item.MarkCleanupFailed(
                     "cleanup_failed",
-                    "Derivater og metadata er gemt, men originalen kunne ikke slettes. Prøv oprydning igen.",
+                    "Derivatives and metadata are saved, but the original could not be deleted. Retry the cleanup.",
                     now);
             }
             else
@@ -446,7 +446,7 @@ internal sealed class PhotoJobProcessor(
         {
             throw new PhotoProcessingException(
                 "derivative_verification_failed",
-                "Et af de behandlede billeder kunne ikke verificeres. Fotoet genbehandles automatisk.",
+                "One of the processed images could not be verified. The photo will be reprocessed automatically.",
                 isTransient: true);
         }
     }

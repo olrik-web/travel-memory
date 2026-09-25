@@ -81,7 +81,7 @@ internal sealed class PhotoQueueWorker(
                 .DeleteIfExistsAsync(cancellationToken: cancellationToken);
             item.MarkFailed(
                 "upload_expired",
-                "Uploaden blev ikke afsluttet inden 24 timer. Vælg filen igen i en ny import.",
+                "The upload was not completed within 24 hours. Select the file again in a new import.",
                 now);
             item.MarkFailedOriginalDeleted(now);
         }
