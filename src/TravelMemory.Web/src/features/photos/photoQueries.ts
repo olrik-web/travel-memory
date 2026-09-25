@@ -17,7 +17,8 @@ export function usePhotoTimeline(tripId: string | undefined) {
 }
 
 // Polls the batch while the worker is still processing it. Polling stops once the batch is
-// complete, or when it could not be loaded at all.
+// complete, or when it could not be loaded at all. Polling is the only refresh: refetching
+// on focus or reconnect would retry a batch that failed to load and flash the loading state.
 export function usePhotoImportBatch(batchId: string | undefined) {
   return useQuery({
     queryKey: photoKeys.importBatch(batchId ?? ''),
@@ -31,5 +32,7 @@ export function usePhotoImportBatch(batchId: string | undefined) {
       return query.state.status === 'error' ? false : statusPollIntervalMs;
     },
     retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }
