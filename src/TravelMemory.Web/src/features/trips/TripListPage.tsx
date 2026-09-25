@@ -1,35 +1,17 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError } from '../../api/http';
-import { listTrips } from './tripApi';
 import { formatTripDates } from './tripDates';
-import type { Trip } from './types';
+import { useTrips } from './tripQueries';
 
 export function TripListPage() {
-  const [trips, setTrips] = useState<Trip[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string>();
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    void listTrips(controller.signal)
-      .then((response) => setTrips(response.items))
-      .catch((requestError: unknown) => {
-        if (requestError instanceof DOMException && requestError.name === 'AbortError') {
-          return;
-        }
-
-        setError(
-          requestError instanceof ApiError
-            ? requestError.message
-            : 'Your trips could not be loaded. Try again.',
-        );
-      })
-      .finally(() => setIsLoading(false));
-
-    return () => controller.abort();
-  }, []);
+  const tripsQuery = useTrips();
+  const trips = tripsQuery.data?.items ?? [];
+  const isLoading = tripsQuery.isPending;
+  const error = tripsQuery.error
+    ? tripsQuery.error instanceof ApiError
+      ? tripsQuery.error.message
+      : 'Your trips could not be loaded. Try again.'
+    : undefined;
 
   return (
     <main className="page">

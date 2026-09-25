@@ -1,61 +1,22 @@
-import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ApiError } from '../../api/http';
-import { getPhotoTimeline } from '../photos/photoImportApi';
-import type { PhotoTimelineItem } from '../photos/types';
-import { getTrip } from './tripApi';
+import { usePhotoTimeline } from '../photos/photoQueries';
 import { formatTripDates } from './tripDates';
-import type { Trip } from './types';
+import { useTrip } from './tripQueries';
 
 export function TripDetailPage() {
   const { tripId } = useParams();
-  const [trip, setTrip] = useState<Trip>();
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string>();
-  const [photos, setPhotos] = useState<PhotoTimelineItem[]>([]);
-  const [photoError, setPhotoError] = useState<string>();
-
-  useEffect(() => {
-    if (!tripId) {
-      return;
-    }
-
-    const controller = new AbortController();
-
-    void getTrip(tripId, controller.signal)
-      .then(setTrip)
-      .catch((requestError: unknown) => {
-        if (requestError instanceof DOMException && requestError.name === 'AbortError') {
-          return;
-        }
-
-        setError(
-          requestError instanceof ApiError && requestError.status === 404
-            ? 'The trip was not found.'
-            : 'The trip could not be loaded. Try again.',
-        );
-      })
-      .finally(() => setIsLoading(false));
-
-    return () => controller.abort();
-  }, [tripId]);
-
-  useEffect(() => {
-    if (!tripId) {
-      return;
-    }
-
-    const controller = new AbortController();
-    void getPhotoTimeline(tripId, controller.signal)
-      .then((timeline) => setPhotos(timeline.items))
-      .catch((requestError: unknown) => {
-        if (!(requestError instanceof DOMException && requestError.name === 'AbortError')) {
-          setPhotoError('The photo timeline could not be loaded.');
-        }
-      });
-
-    return () => controller.abort();
-  }, [tripId]);
+  const tripQuery = useTrip(tripId);
+  const timelineQuery = usePhotoTimeline(tripId);
+  const trip = tripQuery.data;
+  const isLoading = tripId !== undefined && tripQuery.isPending;
+  const error = tripQuery.error
+    ? tripQuery.error instanceof ApiError && tripQuery.error.status === 404
+      ? 'The trip was not found.'
+      : 'The trip could not be loaded. Try again.'
+    : undefined;
+  const photos = timelineQuery.data?.items ?? [];
+  const photoError = timelineQuery.error ? 'The photo timeline could not be loaded.' : undefined;
 
   return (
     <main className="page page-narrow">

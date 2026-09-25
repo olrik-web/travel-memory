@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { renderWithQueryClient } from '../../test/renderWithQueryClient';
 import { NewTripPage } from './NewTripPage';
 
 describe('new trip flow', () => {
@@ -14,7 +15,7 @@ describe('new trip flow', () => {
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal('fetch', fetchMock);
 
-    render(
+    renderWithQueryClient(
       <MemoryRouter initialEntries={['/trips/new']}>
         <Routes>
           <Route path="/trips/new" element={<NewTripPage />} />
