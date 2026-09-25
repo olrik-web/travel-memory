@@ -17,6 +17,7 @@ using TravelMemory.Worker;
 
 namespace TravelMemory.Api.Tests.Integration;
 
+[Collection(ContainerTestCollection.Name)]
 public sealed class PhotoImportFlowTests : IAsyncLifetime
 {
     private static readonly Guid OwnerId =
