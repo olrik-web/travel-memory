@@ -13,7 +13,8 @@ namespace TravelMemory.Api.Tests.Integration;
 public sealed class OpenApiDocumentTests(SqlServerFixture sqlServer, ITestOutputHelper output)
     : IAsyncLifetime
 {
-    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions IndentedJson =
+        new() { WriteIndented = true, NewLine = "\n" };
 
     private readonly string databaseConnectionString =
         sqlServer.CreateDatabaseConnectionString();

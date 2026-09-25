@@ -1,17 +1,7 @@
-export interface Trip {
-  id: string;
-  title: string;
-  startDate?: string;
-  endDate?: string;
-  createdAtUtc: string;
-}
+import type { components } from '../../api/schema';
 
-export interface TripListResponse {
-  items: Trip[];
-}
+type Schemas = components['schemas'];
 
-export interface CreateTripRequest {
-  title: string;
-  startDate?: string;
-  endDate?: string;
-}
+export type Trip = Schemas['TripResponse'];
+export type TripListResponse = Schemas['TripListResponse'];
+export type CreateTripRequest = Schemas['CreateTripRequest'];

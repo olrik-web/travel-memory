@@ -23,6 +23,11 @@ npm --prefix src/TravelMemory.Web test
 Warnings are errors in .NET. Add EF Core migrations with the local `dotnet-ef` tool;
 never hand-edit generated migrations or the model snapshot.
 
+The web app's API types in `src/api/schema.d.ts` are generated; never edit them by hand.
+After changing an API contract, run
+`UPDATE_OPENAPI=1 dotnet test tests/TravelMemory.Api.Tests --filter OpenApiDocumentTests`
+and then `npm --prefix src/TravelMemory.Web run generate:api`.
+
 ## Architecture
 
 Organize by feature (vertical slices), not by technical layer.

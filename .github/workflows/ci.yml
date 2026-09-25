@@ -47,6 +47,9 @@ jobs:
           cache-dependency-path: src/TravelMemory.Web/package-lock.json
 
       - run: npm ci
+      # The committed types must match the committed OpenAPI document, which the .NET
+      # OpenApiDocumentTests in turn keep in sync with the API.
+      - run: npm run generate:api && git diff --exit-code -- src/api/schema.d.ts
       - run: npm run lint
       - run: npm test
       # Also runs the typecheck (`tsc -b`) before the Vite build.
