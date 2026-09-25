@@ -20,15 +20,9 @@ jobs:
       - uses: actions/checkout@v6
 
       # Latest .NET 10 SDK; global.json rolls forward to any newer feature band.
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
-
-      - uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/*.esproj', 'Directory.Build.props', 'global.json') }}
-          restore-keys: nuget-${{ runner.os }}-
 
       - run: dotnet restore
       - run: dotnet build --no-restore --configuration Release
