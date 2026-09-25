@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dotnet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      # Latest .NET 10 SDK; global.json rolls forward to any newer feature band.
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - run: dotnet restore
+      - run: dotnet build --no-restore --configuration Release
+
+      # Integration tests start SQL Server and Azurite through Testcontainers,
+      # which uses the Docker engine preinstalled on ubuntu-latest.
+      - run: dotnet test tests/TravelMemory.Api.Tests --no-build --configuration Release
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: src/TravelMemory.Web
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: src/TravelMemory.Web/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      # Also runs the typecheck (`tsc -b`) before the Vite build.
+      - run: npm run build

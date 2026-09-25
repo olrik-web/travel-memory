@@ -7,6 +7,7 @@ using TravelMemory.Api.Features.Trips;
 
 namespace TravelMemory.Api.Tests.Integration;
 
+[Collection(ContainerTestCollection.Name)]
 public sealed class TripApiTests : IAsyncLifetime
 {
     private static readonly Guid FirstOwnerId =
