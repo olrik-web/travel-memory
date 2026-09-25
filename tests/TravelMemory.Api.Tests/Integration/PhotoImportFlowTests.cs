@@ -7,6 +7,7 @@ using Azure.Storage.Blobs.Specialized;
 using Azure.Storage.Queues;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Testcontainers.Azurite;
@@ -444,15 +445,92 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
         Assert.Equal(1, await CountQueueMessagesAsync(queue));
     }
 
+    [Fact]
+    public async Task Imports_one_of_two_identical_photos_processed_concurrently()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var jpeg = CreateOrientedJpeg();
+        var batches = new List<PhotoImportBatchResponse>();
+        foreach (var fileName in new[] { "first.jpg", "second.jpg" })
+        {
+            var batch = await CreateSingleFileBatchAsync(
+                client,
+                trip.Id,
+                fileName,
+                "image/jpeg",
+                jpeg);
+            await UploadAndCompleteAsync(client, batch.Id, Assert.Single(batch.Items), jpeg);
+            batches.Add(batch);
+        }
+
+        await ProcessAllPendingJobsAsync();
+        foreach (var batch in batches)
+        {
+            var finalizeResponse = await client.PostAsJsonAsync(
+                $"/api/photo-imports/{batch.Id}/finalize",
+                new FinalizePhotoImportRequest(0));
+            Assert.Equal(HttpStatusCode.Accepted, finalizeResponse.StatusCode);
+        }
+
+        var firstJobId = await GetProcessJobIdAsync(Assert.Single(batches[0].Items).Id);
+        var secondJobId = await GetProcessJobIdAsync(Assert.Single(batches[1].Items).Id);
+
+        // The first photo is imported just before the second one is saved, after the second
+        // one has passed its duplicate check: the race two worker processes can produce.
+        await using (var context = CreateDbContext(
+            new BeforePhotoInsertInterceptor(
+                () => ProcessJobAsync(firstJobId, TimeProvider.System))))
+        {
+            var processor = new PhotoJobProcessor(
+                context,
+                new BlobServiceClient(azurite.GetConnectionString()),
+                new PhotoImageProcessor(),
+                TimeProvider.System,
+                NullLogger<PhotoJobProcessor>.Instance);
+            await processor.ProcessAsync(secondJobId, CancellationToken.None);
+        }
+
+        await ProcessAllPendingJobsAsync();
+
+        var first = Assert.Single((await GetBatchAsync(client, batches[0].Id)).Items);
+        Assert.Equal(nameof(PhotoImportItemState.Succeeded), first.State);
+        Assert.Equal(nameof(PhotoImportItemOutcome.Imported), first.Outcome);
+        var second = Assert.Single((await GetBatchAsync(client, batches[1].Id)).Items);
+        Assert.Equal(nameof(PhotoImportItemState.Succeeded), second.State);
+        Assert.Equal(nameof(PhotoImportItemOutcome.Duplicate), second.Outcome);
+
+        var blobService = new BlobServiceClient(azurite.GetConnectionString());
+        Assert.Equal(
+            2,
+            await CountBlobsAsync(
+                blobService.GetBlobContainerClient(PhotoStorageNames.PermanentContainer)));
+        Assert.Equal(
+            0,
+            await CountBlobsAsync(
+                blobService.GetBlobContainerClient(PhotoStorageNames.TemporaryContainer)));
+    }
+
     private TravelMemoryApplicationFactory CreateFactory() =>
         new(databaseConnectionString, azurite.GetConnectionString(), OwnerId);
 
-    private TravelMemoryDbContext CreateDbContext()
+    private TravelMemoryDbContext CreateDbContext(params IInterceptor[] interceptors)
     {
         var options = new DbContextOptionsBuilder<TravelMemoryDbContext>()
             .UseSqlServer(databaseConnectionString)
+            .AddInterceptors(interceptors)
             .Options;
         return new TravelMemoryDbContext(options);
+    }
+
+    private async Task<Guid> GetProcessJobIdAsync(Guid itemId)
+    {
+        await using var context = CreateDbContext();
+        return (await context.PhotoProcessingJobs.SingleAsync(
+            job =>
+                job.ImportItemId == itemId
+                && job.Kind == PhotoProcessingJobKind.Process)).Id;
     }
 
     private ServiceProvider CreateWorkerServices(TimeProvider? timeProvider = null)
@@ -644,4 +722,26 @@ internal sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
     public DateTimeOffset UtcNow { get; set; } = utcNow;
 
     public override DateTimeOffset GetUtcNow() => UtcNow;
+}
+
+internal sealed class BeforePhotoInsertInterceptor(Func<Task> action) : SaveChangesInterceptor
+{
+    private bool triggered;
+
+    public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+        DbContextEventData eventData,
+        InterceptionResult<int> result,
+        CancellationToken cancellationToken = default)
+    {
+        if (!triggered
+            && eventData.Context!.ChangeTracker
+                .Entries<Photo>()
+                .Any(entry => entry.State == EntityState.Added))
+        {
+            triggered = true;
+            await action();
+        }
+
+        return result;
+    }
 }

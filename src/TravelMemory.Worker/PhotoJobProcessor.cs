@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using TravelMemory.Domain.Photos;
 using TravelMemory.Persistence.Data;
@@ -18,7 +19,6 @@ internal sealed class PhotoJobProcessor(
 {
     private static readonly TimeSpan FailedOriginalRetention = TimeSpan.FromDays(7);
     private static readonly TimeSpan MaximumRetryDelay = TimeSpan.FromHours(1);
-    private static readonly SemaphoreSlim PhotoPersistenceLock = new(1, 1);
 
     public async Task ProcessAsync(Guid jobId, CancellationToken cancellationToken)
     {
@@ -253,50 +253,54 @@ internal sealed class PhotoJobProcessor(
             await VerifyDerivativeAsync(webBlobName, cancellationToken);
             await VerifyDerivativeAsync(thumbnailBlobName, cancellationToken);
 
-            await PhotoPersistenceLock.WaitAsync(cancellationToken);
+            var photo = Photo.Create(
+                item,
+                batch.TimeAdjustmentMinutes.Value,
+                webBlobName,
+                thumbnailBlobName,
+                processed.Width,
+                processed.Height,
+                processed.ThumbnailWidth,
+                processed.ThumbnailHeight,
+                timeProvider.GetUtcNow());
+            dbContext.Photos.Add(photo);
+            item.MarkCleanupPending(
+                PhotoImportItemOutcome.Imported,
+                timeProvider.GetUtcNow(),
+                timeProvider.GetUtcNow());
+            await EnsureCleanupJobAsync(item, cancellationToken);
+
             try
             {
-                var duplicateAfterProcessing = await dbContext.Photos.AnyAsync(
-                    photo =>
-                        photo.OwnerId == item.OwnerId
-                        && photo.TripId == item.TripId
-                        && photo.ContentHash == item.ContentHash,
-                    cancellationToken);
-
-                if (duplicateAfterProcessing)
-                {
-                    await DeleteDerivativeAsync(webBlobName, cancellationToken);
-                    await DeleteDerivativeAsync(thumbnailBlobName, cancellationToken);
-                    item.MarkCleanupPending(
-                        PhotoImportItemOutcome.Duplicate,
-                        timeProvider.GetUtcNow(),
-                        timeProvider.GetUtcNow());
-                }
-                else
-                {
-                    dbContext.Photos.Add(
-                        Photo.Create(
-                            item,
-                            batch.TimeAdjustmentMinutes.Value,
-                            webBlobName,
-                            thumbnailBlobName,
-                            processed.Width,
-                            processed.Height,
-                            processed.ThumbnailWidth,
-                            processed.ThumbnailHeight,
-                            timeProvider.GetUtcNow()));
-                    item.MarkCleanupPending(
-                        PhotoImportItemOutcome.Imported,
-                        timeProvider.GetUtcNow(),
-                        timeProvider.GetUtcNow());
-                }
-
-                await EnsureCleanupJobAsync(item, cancellationToken);
                 await dbContext.SaveChangesAsync(cancellationToken);
             }
-            finally
+            catch (DbUpdateException exception) when (
+                exception.InnerException is SqlException { Number: 2601 or 2627 })
             {
-                PhotoPersistenceLock.Release();
+                // The unique index on (OwnerId, TripId, ContentHash) is the duplicate guard
+                // across worker processes: another item with the same content was imported
+                // after the check above. The failed save left the tracked changes pending,
+                // so the item is saved again as a duplicate without this photo.
+                dbContext.Entry(photo).State = EntityState.Detached;
+                var importedByAnotherItem = await dbContext.Photos.AnyAsync(
+                    value =>
+                        value.OwnerId == item.OwnerId
+                        && value.TripId == item.TripId
+                        && value.ContentHash == item.ContentHash
+                        && value.ImportItemId != item.Id,
+                    cancellationToken);
+                if (!importedByAnotherItem)
+                {
+                    throw;
+                }
+
+                await DeleteDerivativeAsync(webBlobName, cancellationToken);
+                await DeleteDerivativeAsync(thumbnailBlobName, cancellationToken);
+                item.MarkCleanupPending(
+                    PhotoImportItemOutcome.Duplicate,
+                    timeProvider.GetUtcNow(),
+                    timeProvider.GetUtcNow());
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
         }
         finally
