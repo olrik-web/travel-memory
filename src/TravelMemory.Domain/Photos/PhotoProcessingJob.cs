@@ -83,6 +83,13 @@ public sealed class PhotoProcessingJob
         LastDispatchedAtUtc = dispatchedAt.ToUniversalTime();
     }
 
+    // No message was sent, so no worker can be processing the job, and the worker's next
+    // redispatch cycle sends it instead of waiting for the lost-message timeout.
+    public void MarkDispatchFailed()
+    {
+        LastDispatchedAtUtc = null;
+    }
+
     public bool TryStart(DateTimeOffset startedAt)
     {
         if (State != PhotoProcessingJobState.Pending || AvailableAtUtc > startedAt)

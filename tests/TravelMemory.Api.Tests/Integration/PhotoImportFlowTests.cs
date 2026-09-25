@@ -526,13 +526,7 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
             "image/jpeg",
             jpeg);
         var item = Assert.Single(batch.Items);
-        Assert.NotNull(item.UploadUrl);
-        using var uploadRequest = new HttpRequestMessage(HttpMethod.Put, item.UploadUrl);
-        uploadRequest.Headers.TryAddWithoutValidation("x-ms-blob-type", "BlockBlob");
-        uploadRequest.Content = new ByteArrayContent(jpeg);
-        uploadRequest.Content.Headers.ContentType = MediaTypeHeaderValue.Parse(item.ContentType);
-        using var uploadClient = new HttpClient();
-        (await uploadClient.SendAsync(uploadRequest)).EnsureSuccessStatusCode();
+        await UploadAsync(item, jpeg);
 
         // Several calls make it very likely that at least two pass the AwaitingUpload
         // check before either saves, like a client retry racing the original request.
@@ -606,6 +600,41 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
         var recoveredJob = await context.PhotoProcessingJobs.SingleAsync(
             job => job.ImportItemId == recoverableItemId);
         Assert.Equal(PhotoProcessingJobState.Pending, recoveredJob.State);
+    }
+
+    [Fact]
+    public async Task Dispatches_a_job_in_the_next_cycle_after_a_failed_enqueue()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var jpeg = CreateOrientedJpeg();
+        var batch = await CreateSingleFileBatchAsync(
+            client,
+            trip.Id,
+            "queue-outage.jpg",
+            "image/jpeg",
+            jpeg);
+        var item = Assert.Single(batch.Items);
+        await UploadAsync(item, jpeg);
+
+        // Deleting the queue makes the API's enqueue fail like a queue outage.
+        var queue = new QueueServiceClient(azurite.GetConnectionString())
+            .GetQueueClient(PhotoStorageNames.ProcessingQueue);
+        await queue.DeleteAsync();
+        var completion = await client.PostAsync(
+            $"/api/photo-imports/{batch.Id}/items/{item.Id}/complete-upload",
+            content: null);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, completion.StatusCode);
+        Assert.Contains("automatically", await completion.Content.ReadAsStringAsync());
+
+        await queue.CreateAsync();
+        var clock = new ManualTimeProvider(DateTimeOffset.UtcNow.AddMinutes(1));
+        await using var workerServices = CreateWorkerServices(clock);
+        await workerServices.GetRequiredService<PhotoQueueWorker>()
+            .DispatchPendingJobsAsync(CancellationToken.None);
+
+        Assert.Equal(1, await CountQueueMessagesAsync(queue));
     }
 
     private TravelMemoryApplicationFactory CreateFactory() =>
@@ -784,6 +813,15 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
         PhotoImportItemResponse item,
         byte[] content)
     {
+        await UploadAsync(item, content);
+        var completionResponse = await apiClient.PostAsync(
+            $"/api/photo-imports/{batchId}/items/{item.Id}/complete-upload",
+            content: null);
+        Assert.Equal(HttpStatusCode.Accepted, completionResponse.StatusCode);
+    }
+
+    private static async Task UploadAsync(PhotoImportItemResponse item, byte[] content)
+    {
         Assert.NotNull(item.UploadUrl);
         using var uploadRequest = new HttpRequestMessage(HttpMethod.Put, item.UploadUrl);
         uploadRequest.Headers.TryAddWithoutValidation("x-ms-blob-type", "BlockBlob");
@@ -792,11 +830,6 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
         using var uploadClient = new HttpClient();
         var uploadResponse = await uploadClient.SendAsync(uploadRequest);
         uploadResponse.EnsureSuccessStatusCode();
-
-        var completionResponse = await apiClient.PostAsync(
-            $"/api/photo-imports/{batchId}/items/{item.Id}/complete-upload",
-            content: null);
-        Assert.Equal(HttpStatusCode.Accepted, completionResponse.StatusCode);
     }
 
     private static async Task<PhotoImportBatchResponse> GetBatchAsync(
