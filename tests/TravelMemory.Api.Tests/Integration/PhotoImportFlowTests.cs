@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Specialized;
 using Azure.Storage.Queues;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
@@ -349,6 +350,64 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
         Assert.False(Assert.Single((await GetBatchAsync(client, batch.Id)).Items).CanRetry);
     }
 
+    [Fact]
+    public async Task Keeps_retrying_failed_original_expiration_without_touching_the_item_error()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var invalidBytes = "not a jpeg"u8.ToArray();
+        var batch = await CreateSingleFileBatchAsync(
+            client,
+            trip.Id,
+            "broken.jpg",
+            "image/jpeg",
+            invalidBytes);
+        var item = Assert.Single(batch.Items);
+        await UploadAndCompleteAsync(client, batch.Id, item, invalidBytes);
+        await ProcessAllPendingJobsAsync();
+
+        Guid expirationJobId;
+        string temporaryBlobName;
+        await using (var context = CreateDbContext())
+        {
+            expirationJobId = (await context.PhotoProcessingJobs.SingleAsync(
+                job =>
+                    job.ImportItemId == item.Id
+                    && job.Kind == PhotoProcessingJobKind.ExpireFailedOriginal)).Id;
+            temporaryBlobName = (await context.PhotoImportItems.SingleAsync(
+                value => value.Id == item.Id)).TemporaryBlobName;
+        }
+
+        // A lease makes the delete fail with a non-transient 412, an unexpected error.
+        var temporaryBlob = new BlobServiceClient(azurite.GetConnectionString())
+            .GetBlobContainerClient(PhotoStorageNames.TemporaryContainer)
+            .GetBlobClient(temporaryBlobName);
+        var lease = temporaryBlob.GetBlobLeaseClient();
+        await lease.AcquireAsync(TimeSpan.FromSeconds(60));
+        var afterRetention = DateTimeOffset.UtcNow.AddDays(8);
+        await ProcessJobAsync(expirationJobId, new FixedTimeProvider(afterRetention));
+
+        await using (var context = CreateDbContext())
+        {
+            var job = await context.PhotoProcessingJobs.SingleAsync(
+                value => value.Id == expirationJobId);
+            Assert.Equal(PhotoProcessingJobState.Pending, job.State);
+            var storedItem = await context.PhotoImportItems.SingleAsync(
+                value => value.Id == item.Id);
+            Assert.Equal("image_decode_failed", storedItem.ErrorCode);
+            Assert.Null(storedItem.OriginalDeletedAtUtc);
+        }
+
+        await lease.ReleaseAsync();
+        await ProcessJobAsync(expirationJobId, new FixedTimeProvider(afterRetention.AddHours(2)));
+
+        Assert.False(await temporaryBlob.ExistsAsync());
+        var expiredItem = Assert.Single((await GetBatchAsync(client, batch.Id)).Items);
+        Assert.Equal("image_decode_failed", expiredItem.ErrorCode);
+        Assert.NotNull(expiredItem.OriginalDeletedAtUtc);
+    }
+
     private TravelMemoryApplicationFactory CreateFactory() =>
         new(databaseConnectionString, azurite.GetConnectionString(), OwnerId);
 
@@ -423,18 +482,23 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
 
             foreach (var jobId in jobIds)
             {
-                await using var context = CreateDbContext();
-                var processor = new PhotoJobProcessor(
-                    context,
-                    new BlobServiceClient(azurite.GetConnectionString()),
-                    new PhotoImageProcessor(),
-                    TimeProvider.System,
-                    NullLogger<PhotoJobProcessor>.Instance);
-                await processor.ProcessAsync(jobId, CancellationToken.None);
+                await ProcessJobAsync(jobId, TimeProvider.System);
             }
         }
 
         throw new InvalidOperationException("Photo jobs did not reach a terminal state.");
+    }
+
+    private async Task ProcessJobAsync(Guid jobId, TimeProvider timeProvider)
+    {
+        await using var context = CreateDbContext();
+        var processor = new PhotoJobProcessor(
+            context,
+            new BlobServiceClient(azurite.GetConnectionString()),
+            new PhotoImageProcessor(),
+            timeProvider,
+            NullLogger<PhotoJobProcessor>.Instance);
+        await processor.ProcessAsync(jobId, CancellationToken.None);
     }
 
     private static async Task<TripResponse> CreateTripAsync(HttpClient client)
@@ -534,4 +598,9 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
 
         return count;
     }
+}
+
+internal sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+{
+    public override DateTimeOffset GetUtcNow() => utcNow;
 }

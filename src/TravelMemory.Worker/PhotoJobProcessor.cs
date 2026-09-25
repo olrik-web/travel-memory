@@ -17,6 +17,7 @@ internal sealed class PhotoJobProcessor(
     ILogger<PhotoJobProcessor> logger)
 {
     private static readonly TimeSpan FailedOriginalRetention = TimeSpan.FromDays(7);
+    private static readonly TimeSpan MaximumRetryDelay = TimeSpan.FromHours(1);
     private static readonly SemaphoreSlim PhotoPersistenceLock = new(1, 1);
 
     public async Task ProcessAsync(Guid jobId, CancellationToken cancellationToken)
@@ -105,9 +106,9 @@ internal sealed class PhotoJobProcessor(
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             // The exception may have left half-applied changes in the change tracker, such as
-            // a rejected insert, so reload the entities before recording the failure. It is
-            // not retried automatically because it would most likely fail the same way; the
-            // retained original lets the user retry it manually.
+            // a rejected insert, so reload the entities before recording the failure. Photo
+            // jobs are not retried automatically because they would most likely fail the same
+            // way; the retained original lets the user retry them manually.
             dbContext.ChangeTracker.Clear();
             job = await dbContext.PhotoProcessingJobs.SingleAsync(
                 value => value.Id == jobId,
@@ -337,10 +338,19 @@ internal sealed class PhotoJobProcessor(
             job.Id,
             job.AttemptCount);
         var now = timeProvider.GetUtcNow();
+        var delay = TimeSpan.FromSeconds(Math.Min(
+            Math.Pow(2, job.AttemptCount) * 5,
+            MaximumRetryDelay.TotalSeconds));
 
-        if (exception.IsTransient && job.AttemptCount < PhotoProcessingJob.MaximumAttempts)
+        if (job.Kind == PhotoProcessingJobKind.ExpireFailedOriginal)
         {
-            var delay = TimeSpan.FromSeconds(Math.Pow(2, job.AttemptCount) * 5);
+            // Failing to delete the retained original says nothing about the photo, so the
+            // item keeps its own failure. The job never fails for good, because nothing would
+            // then delete the original and the retention promise would silently lapse.
+            job.Retry(exception.Message, now, delay);
+        }
+        else if (exception.IsTransient && job.AttemptCount < PhotoProcessingJob.MaximumAttempts)
+        {
             job.Retry(exception.Message, now, delay);
             SetQueuedState(job.Kind, item, now);
         }
@@ -405,10 +415,14 @@ internal sealed class PhotoJobProcessor(
         DateTimeOffset availableAt,
         CancellationToken cancellationToken)
     {
+        // Only an active expiration counts: a manual retry marks the previous one succeeded
+        // to cancel it, and the original must still expire if the retry fails again.
         var exists = await dbContext.PhotoProcessingJobs.AnyAsync(
             job =>
                 job.ImportItemId == item.Id
-                && job.Kind == PhotoProcessingJobKind.ExpireFailedOriginal,
+                && job.Kind == PhotoProcessingJobKind.ExpireFailedOriginal
+                && (job.State == PhotoProcessingJobState.Pending
+                    || job.State == PhotoProcessingJobState.Processing),
             cancellationToken);
         if (!exists)
         {
