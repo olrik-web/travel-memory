@@ -3,8 +3,11 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Specialized;
+using Azure.Storage.Queues;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Testcontainers.Azurite;
 using TravelMemory.Api.Features.PhotoImports;
@@ -236,6 +239,175 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
         Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
     }
 
+    [Fact]
+    public async Task Worker_fails_a_job_with_an_unexpected_error_and_keeps_processing()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var jpeg = CreateOrientedJpeg();
+        var missingBatch = await CreateSingleFileBatchAsync(
+            client,
+            trip.Id,
+            "missing.jpg",
+            "image/jpeg",
+            jpeg);
+        var missingItem = Assert.Single(missingBatch.Items);
+        await UploadAndCompleteAsync(client, missingBatch.Id, missingItem, jpeg);
+
+        // Deleting the uploaded original before the worker starts makes the analysis
+        // download fail with a 404, which is neither a photo processing error nor a
+        // transient storage error.
+        var blobService = new BlobServiceClient(azurite.GetConnectionString());
+        var temporaryContainer =
+            blobService.GetBlobContainerClient(PhotoStorageNames.TemporaryContainer);
+        await foreach (var blob in temporaryContainer.GetBlobsAsync())
+        {
+            await temporaryContainer.DeleteBlobAsync(blob.Name);
+        }
+
+        await using var workerServices = CreateWorkerServices();
+        var worker = workerServices.GetRequiredService<PhotoQueueWorker>();
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            var failedItem = await WaitForSingleItemAsync(
+                client,
+                missingBatch.Id,
+                item => item.State == nameof(PhotoImportItemState.Failed));
+            Assert.Equal("unexpected_error", failedItem.ErrorCode);
+            Assert.True(failedItem.CanRetry);
+            Assert.NotNull(failedItem.OriginalRetainedUntilUtc);
+
+            var heic = await File.ReadAllBytesAsync(
+                Path.Combine(AppContext.BaseDirectory, "Fixtures", "sample.heic"));
+            var laterBatch = await CreateSingleFileBatchAsync(
+                client,
+                trip.Id,
+                "sample.heic",
+                "image/heic",
+                heic);
+            await UploadAndCompleteAsync(
+                client,
+                laterBatch.Id,
+                Assert.Single(laterBatch.Items),
+                heic);
+            await WaitForSingleItemAsync(
+                client,
+                laterBatch.Id,
+                item => item.State == nameof(PhotoImportItemState.ReadyForReview));
+
+            Assert.False(worker.ExecuteTask?.IsCompleted);
+            await using var verificationContext = CreateDbContext();
+            var failedJob = await verificationContext.PhotoProcessingJobs.SingleAsync(
+                job =>
+                    job.ImportItemId == missingItem.Id
+                    && job.Kind == PhotoProcessingJobKind.Analyze);
+            Assert.Equal(PhotoProcessingJobState.Failed, failedJob.State);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task Rejects_retry_after_the_failed_original_was_deleted()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var jpeg = CreateOrientedJpeg();
+        var batch = await CreateSingleFileBatchAsync(
+            client,
+            trip.Id,
+            "expired.jpg",
+            "image/jpeg",
+            jpeg);
+        var item = Assert.Single(batch.Items);
+        await UploadAndCompleteAsync(client, batch.Id, item, jpeg);
+
+        // Simulate an exhausted item whose 7-day retention has already expired.
+        await using (var context = CreateDbContext())
+        {
+            var storedItem = await context.PhotoImportItems.SingleAsync(
+                value => value.Id == item.Id);
+            var now = DateTimeOffset.UtcNow;
+            var storedJob = await context.PhotoProcessingJobs.SingleAsync(
+                value => value.ImportItemId == item.Id);
+            Assert.True(storedJob.TryStart(now));
+            storedJob.Fail("Processing failed.", now);
+            storedItem.MarkFailed("processing_exhausted", "Processing failed.", now);
+            storedItem.MarkFailedOriginalDeleted(now);
+            await context.SaveChangesAsync();
+        }
+
+        var response = await client.PostAsync(
+            $"/api/photo-imports/{batch.Id}/items/{item.Id}/retry",
+            content: null);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.False(Assert.Single((await GetBatchAsync(client, batch.Id)).Items).CanRetry);
+    }
+
+    [Fact]
+    public async Task Keeps_retrying_failed_original_expiration_without_touching_the_item_error()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var invalidBytes = "not a jpeg"u8.ToArray();
+        var batch = await CreateSingleFileBatchAsync(
+            client,
+            trip.Id,
+            "broken.jpg",
+            "image/jpeg",
+            invalidBytes);
+        var item = Assert.Single(batch.Items);
+        await UploadAndCompleteAsync(client, batch.Id, item, invalidBytes);
+        await ProcessAllPendingJobsAsync();
+
+        Guid expirationJobId;
+        string temporaryBlobName;
+        await using (var context = CreateDbContext())
+        {
+            expirationJobId = (await context.PhotoProcessingJobs.SingleAsync(
+                job =>
+                    job.ImportItemId == item.Id
+                    && job.Kind == PhotoProcessingJobKind.ExpireFailedOriginal)).Id;
+            temporaryBlobName = (await context.PhotoImportItems.SingleAsync(
+                value => value.Id == item.Id)).TemporaryBlobName;
+        }
+
+        // A lease makes the delete fail with a non-transient 412, an unexpected error.
+        var temporaryBlob = new BlobServiceClient(azurite.GetConnectionString())
+            .GetBlobContainerClient(PhotoStorageNames.TemporaryContainer)
+            .GetBlobClient(temporaryBlobName);
+        var lease = temporaryBlob.GetBlobLeaseClient();
+        await lease.AcquireAsync(TimeSpan.FromSeconds(60));
+        var afterRetention = DateTimeOffset.UtcNow.AddDays(8);
+        await ProcessJobAsync(expirationJobId, new FixedTimeProvider(afterRetention));
+
+        await using (var context = CreateDbContext())
+        {
+            var job = await context.PhotoProcessingJobs.SingleAsync(
+                value => value.Id == expirationJobId);
+            Assert.Equal(PhotoProcessingJobState.Pending, job.State);
+            var storedItem = await context.PhotoImportItems.SingleAsync(
+                value => value.Id == item.Id);
+            Assert.Equal("image_decode_failed", storedItem.ErrorCode);
+            Assert.Null(storedItem.OriginalDeletedAtUtc);
+        }
+
+        await lease.ReleaseAsync();
+        await ProcessJobAsync(expirationJobId, new FixedTimeProvider(afterRetention.AddHours(2)));
+
+        Assert.False(await temporaryBlob.ExistsAsync());
+        var expiredItem = Assert.Single((await GetBatchAsync(client, batch.Id)).Items);
+        Assert.Equal("image_decode_failed", expiredItem.ErrorCode);
+        Assert.NotNull(expiredItem.OriginalDeletedAtUtc);
+    }
+
     private TravelMemoryApplicationFactory CreateFactory() =>
         new(databaseConnectionString, azurite.GetConnectionString(), OwnerId);
 
@@ -245,6 +417,45 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
             .UseSqlServer(databaseConnectionString)
             .Options;
         return new TravelMemoryDbContext(options);
+    }
+
+    private ServiceProvider CreateWorkerServices()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDbContext<TravelMemoryDbContext>(options =>
+            options.UseSqlServer(databaseConnectionString));
+        services.AddSingleton(new BlobServiceClient(azurite.GetConnectionString()));
+        services.AddSingleton(new QueueServiceClient(azurite.GetConnectionString()));
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<PhotoImageProcessor>();
+        services.AddScoped<PhotoJobProcessor>();
+        services.AddSingleton<PhotoQueueWorker>();
+        return services.BuildServiceProvider();
+    }
+
+    private static async Task<PhotoImportItemResponse> WaitForSingleItemAsync(
+        HttpClient client,
+        Guid batchId,
+        Func<PhotoImportItemResponse, bool> predicate)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            var item = Assert.Single((await GetBatchAsync(client, batchId)).Items);
+            if (predicate(item))
+            {
+                return item;
+            }
+
+            if (DateTimeOffset.UtcNow > deadline)
+            {
+                Assert.Fail(
+                    $"Item {item.FileName} is still {item.State} ({item.ErrorCode}) after 30 seconds.");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(200));
+        }
     }
 
     private async Task ProcessAllPendingJobsAsync()
@@ -271,18 +482,23 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
 
             foreach (var jobId in jobIds)
             {
-                await using var context = CreateDbContext();
-                var processor = new PhotoJobProcessor(
-                    context,
-                    new BlobServiceClient(azurite.GetConnectionString()),
-                    new PhotoImageProcessor(),
-                    TimeProvider.System,
-                    NullLogger<PhotoJobProcessor>.Instance);
-                await processor.ProcessAsync(jobId, CancellationToken.None);
+                await ProcessJobAsync(jobId, TimeProvider.System);
             }
         }
 
         throw new InvalidOperationException("Photo jobs did not reach a terminal state.");
+    }
+
+    private async Task ProcessJobAsync(Guid jobId, TimeProvider timeProvider)
+    {
+        await using var context = CreateDbContext();
+        var processor = new PhotoJobProcessor(
+            context,
+            new BlobServiceClient(azurite.GetConnectionString()),
+            new PhotoImageProcessor(),
+            timeProvider,
+            NullLogger<PhotoJobProcessor>.Instance);
+        await processor.ProcessAsync(jobId, CancellationToken.None);
     }
 
     private static async Task<TripResponse> CreateTripAsync(HttpClient client)
@@ -382,4 +598,9 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
 
         return count;
     }
+}
+
+internal sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+{
+    public override DateTimeOffset GetUtcNow() => utcNow;
 }
