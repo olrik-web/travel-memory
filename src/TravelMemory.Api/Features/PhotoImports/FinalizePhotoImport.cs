@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using TravelMemory.Api.Auth;
 using TravelMemory.Domain.Photos;
 using TravelMemory.Persistence.Data;
+using TravelMemory.Persistence.Photos;
 
 namespace TravelMemory.Api.Features.PhotoImports;
 
@@ -95,7 +96,11 @@ internal static class FinalizePhotoImport
                      item => item.State == PhotoImportItemState.ReadyForReview))
         {
             item.QueueForProcessing(now);
-            var job = PhotoProcessingJob.Create(item, PhotoProcessingJobKind.Process, now);
+            var job = PhotoProcessingJob.Create(
+                item,
+                PhotoProcessingJobKind.Process,
+                now,
+                PhotoJobTracing.CurrentTraceParent);
             job.MarkDispatched(now);
             jobs.Add(job);
             dbContext.PhotoProcessingJobs.Add(job);

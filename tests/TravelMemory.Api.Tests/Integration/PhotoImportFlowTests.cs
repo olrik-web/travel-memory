@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -635,6 +637,78 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
             .DispatchPendingJobsAsync(CancellationToken.None);
 
         Assert.Equal(1, await CountQueueMessagesAsync(queue));
+    }
+
+    [Fact]
+    public async Task Continues_the_request_trace_through_the_queue_into_the_worker()
+    {
+        var traceId = ActivityTraceId.CreateRandom();
+        var spans = new ConcurrentBag<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source =>
+                source.Name is "Microsoft.AspNetCore" or "TravelMemory.Worker",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.TraceId == traceId)
+                {
+                    spans.Add(activity);
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var jpeg = CreateOrientedJpeg();
+        var batch = await CreateSingleFileBatchAsync(
+            client,
+            trip.Id,
+            "traced.jpg",
+            "image/jpeg",
+            jpeg);
+        var item = Assert.Single(batch.Items);
+        await UploadAsync(item, jpeg);
+        using var completion = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/photo-imports/{batch.Id}/items/{item.Id}/complete-upload");
+        completion.Headers.Add("traceparent", $"00-{traceId}-{ActivitySpanId.CreateRandom()}-01");
+        Assert.Equal(HttpStatusCode.Accepted, (await client.SendAsync(completion)).StatusCode);
+
+        await using (var context = CreateDbContext())
+        {
+            var job = await context.PhotoProcessingJobs.SingleAsync(
+                value => value.ImportItemId == item.Id);
+            Assert.Contains(traceId.ToString(), job.TraceParent);
+        }
+
+        var queue = new QueueServiceClient(azurite.GetConnectionString())
+            .GetQueueClient(PhotoStorageNames.ProcessingQueue);
+        var message = Assert.Single((await queue.PeekMessagesAsync()).Value);
+        Assert.Contains(traceId.ToString(), message.MessageText);
+
+        await using var workerServices = CreateWorkerServices();
+        var worker = workerServices.GetRequiredService<PhotoQueueWorker>();
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            await WaitForSingleItemAsync(
+                client,
+                batch.Id,
+                value => value.State == nameof(PhotoImportItemState.ReadyForReview));
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+
+        var received = Assert.Single(spans, span => span.OperationName == "receive photo job");
+        Assert.Equal(ActivityKind.Consumer, received.Kind);
+        var analyzed = Assert.Single(spans, span => span.OperationName == "Analyze photo");
+        Assert.Equal(received.SpanId, analyzed.ParentSpanId);
     }
 
     private TravelMemoryApplicationFactory CreateFactory() =>

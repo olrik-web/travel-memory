@@ -62,7 +62,7 @@ public sealed class PhotoImportDomainTests
     {
         var item = CreateItem(
             PhotoImportBatch.Create(OwnerId, TripId, Guid.NewGuid(), 1, Now));
-        var job = PhotoProcessingJob.Create(item, PhotoProcessingJobKind.Analyze, Now);
+        var job = PhotoProcessingJob.Create(item, PhotoProcessingJobKind.Analyze, Now, traceParent: null);
 
         Assert.True(job.TryStart(Now));
         Assert.Equal(1, job.AttemptCount);
