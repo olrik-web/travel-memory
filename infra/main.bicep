@@ -32,7 +32,10 @@ param budgetContactEmail string
 @description('First day of the budget period. It must be the first of a month and never changes afterwards.')
 param budgetStartDate string = '2026-09-01'
 
-var suffix = uniqueString(resourceGroup().id)
+// The region is part of the suffix, so moving to another region creates fresh names
+// instead of colliding with resources from the old region that are still being deleted or
+// are soft-deleted, such as a SQL server name or a Log Analytics workspace.
+var suffix = uniqueString(resourceGroup().id, location)
 var databaseName = 'travelmemory'
 var processingQueueName = 'photo-processing'
 var blobContainerNames = [
@@ -54,7 +57,7 @@ resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' 
 
 // Ingestion is capped per day so the logs stay inside the free monthly allowance.
 resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
-  name: 'log-travel-memory'
+  name: 'log-travel-memory-${suffix}'
   location: location
   properties: {
     sku: {
@@ -215,7 +218,7 @@ resource database 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
 }
 
 resource environment 'Microsoft.App/managedEnvironments@2025-01-01' = {
-  name: 'cae-travel-memory'
+  name: 'cae-travel-memory-${suffix}'
   location: location
   properties: {
     appLogsConfiguration: {
