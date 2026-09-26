@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { ApiError } from '../../api/http';
 import { runWithConcurrency } from './boundedConcurrency';
 import { createFileFingerprint } from './fileFingerprint';
 import { clearStoredImport, readStoredImport, saveStoredImport } from './importStorage';
@@ -10,6 +11,12 @@ import {
   retryPhotoImportItem,
 } from './photoImportApi';
 import { photoKeys, usePhotoImportBatch } from './photoQueries';
+import {
+  describeRejectedFiles,
+  partitionSelection,
+  removeDuplicateFingerprints,
+  type SkippedFile,
+} from './photoSelection';
 import type { CreatePhotoImportFile, PhotoImportBatch } from './types';
 import { uploadPhotoFile } from './uploadPhotoFile';
 
@@ -20,10 +27,24 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+// A rejected batch lists its problems per file; show them by file name rather than the
+// problem's generic title.
+function importStartErrorMessage(error: unknown, fileNames: readonly string[]) {
+  if (error instanceof ApiError && error.problem?.errors) {
+    const details = describeRejectedFiles(error.problem.errors, fileNames);
+    if (details.length > 0) {
+      return `The import was rejected. ${details.join(' ')}`;
+    }
+  }
+
+  return errorMessage(error, 'The photo import could not be started.');
+}
+
 export function usePhotoImport(tripId: string) {
   const queryClient = useQueryClient();
   const [batchId, setBatchId] = useState(() => readStoredImport(tripId)?.batchId);
   const [error, setError] = useState<string>();
+  const [skippedFiles, setSkippedFiles] = useState<SkippedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [adjustmentMinutes, setAdjustmentMinutes] = useState(0);
 
@@ -77,26 +98,39 @@ export function usePhotoImport(tripId: string) {
       setError(errorMessage(requestError, 'The file could not be retried.')),
   });
 
-  async function uploadFiles(files: File[]) {
-    if (files.length === 0) {
+  async function uploadFiles(selectedFiles: File[]) {
+    if (selectedFiles.length === 0) {
       return;
     }
 
-    if (files.length > maximumFilesPerImport) {
+    const selection = partitionSelection(selectedFiles);
+    setError(undefined);
+    setSkippedFiles(selection.skipped);
+    if (selection.accepted.length === 0) {
+      setError('None of the selected files can be imported. Select JPEG or HEIC photos.');
+      return;
+    }
+
+    if (selection.accepted.length > maximumFilesPerImport) {
       setError(`Select at most ${maximumFilesPerImport} photos at a time.`);
       return;
     }
 
-    setError(undefined);
     setIsUploading(true);
+    let fileNames: string[] = [];
 
     try {
-      const entries = await Promise.all(
-        files.map(async (file) => ({
+      const fingerprinted = await Promise.all(
+        selection.accepted.map(async (file) => ({
           file,
           fingerprint: await createFileFingerprint(file),
         })),
       );
+      const { unique: entries, skipped: duplicates } =
+        removeDuplicateFingerprints(fingerprinted);
+      if (duplicates.length > 0) {
+        setSkippedFiles([...selection.skipped, ...duplicates]);
+      }
 
       let activeBatch = batch;
       if (!activeBatch) {
@@ -107,6 +141,7 @@ export function usePhotoImport(tripId: string) {
           contentType: file.type,
           sizeBytes: file.size,
         }));
+        fileNames = entries.map(({ file }) => file.name);
         activeBatch = await createPhotoImport(tripId, clientBatchId, descriptors);
         saveStoredImport(tripId, { batchId: activeBatch.id, clientBatchId });
         showBatch(activeBatch);
@@ -140,7 +175,7 @@ export function usePhotoImport(tripId: string) {
       );
       await refreshBatch(uploadBatchId);
     } catch (requestError: unknown) {
-      setError(errorMessage(requestError, 'The photo import could not be started.'));
+      setError(importStartErrorMessage(requestError, fileNames));
     } finally {
       setIsUploading(false);
     }
@@ -151,6 +186,7 @@ export function usePhotoImport(tripId: string) {
     setBatchId(undefined);
     setAdjustmentMinutes(0);
     setError(undefined);
+    setSkippedFiles([]);
     preview.reset();
   }
 
@@ -159,6 +195,7 @@ export function usePhotoImport(tripId: string) {
     isLoading: batchId !== undefined && batchQuery.isPending,
     isUploading,
     error: error ?? queryError,
+    skippedFiles,
     adjustmentMinutes,
     setAdjustmentMinutes,
     preview: preview.data,
