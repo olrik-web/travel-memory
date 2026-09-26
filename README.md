@@ -95,6 +95,7 @@ that each user only sees their own trips.
 ```powershell
 dotnet test --project "tests\TravelMemory.Domain.Tests"
 dotnet test --project "tests\TravelMemory.IntegrationTests"
+dotnet test --project "tests\TravelMemory.EndToEndTests"
 npm --prefix "src\TravelMemory.Web" run lint
 npm --prefix "src\TravelMemory.Web" run typecheck
 npm --prefix "src\TravelMemory.Web" test
@@ -107,6 +108,11 @@ isolation between two owners. The photo import tests
 also use Azurite and verify JPEG/HEIC handling, orientation, the 500-file limit, SAS
 permissions, time adjustment, duplicates, retries, derivatives, original deletion, and
 visible retention after a processing failure.
+
+The end-to-end test starts the real Aspire resource graph with `Aspire.Hosting.Testing`.
+It signs in as `alice` through Keycloak's login form, creates a trip, and imports one
+photo through the API, Blob Storage, and the worker. It needs Docker, the web app's npm
+packages (`npm ci`), and free ports 5173 and 8180, so stop a running AppHost first.
 
 ## API
 
@@ -208,6 +214,7 @@ src/
 tests/
   TravelMemory.Domain.Tests/    Fast domain tests without Docker
   TravelMemory.IntegrationTests/ API and worker tests against SQL Server and Azurite
+  TravelMemory.EndToEndTests/   Sign-in and photo import through the whole Aspire graph
 ```
 
 ## Local data
