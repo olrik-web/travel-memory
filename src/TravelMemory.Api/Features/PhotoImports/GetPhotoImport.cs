@@ -34,6 +34,6 @@ internal static class GetPhotoImport
                 batch,
                 items,
                 storage,
-                includeUploadGrants: false));
+                uploadGrantSigner: null));
     }
 }

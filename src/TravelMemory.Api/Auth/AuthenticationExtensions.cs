@@ -1,7 +1,9 @@
 using System.Security.Claims;
+using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
@@ -9,6 +11,8 @@ namespace TravelMemory.Api.Auth;
 
 internal static class AuthenticationExtensions
 {
+    public const string DataProtectionContainer = "data-protection";
+
     // The API is a backend for the SPA it serves: it runs the OIDC flow itself and gives the
     // browser only an HttpOnly cookie, so no token is ever readable by JavaScript.
     public static void AddTravelMemoryAuthentication(this WebApplicationBuilder builder)
@@ -90,6 +94,17 @@ internal static class AuthenticationExtensions
                 .RequireAuthenticatedUser()
                 .RequireAssertion(context => HttpCurrentUser.TryGetOwnerId(context.User, out _))
                 .Build());
+        // The session and sign-in cookies are encrypted with Data Protection keys. In Azure
+        // the API scales to zero and replicas come and go, so the keys live in Blob Storage
+        // rather than in the container's file system, where every cold start would sign
+        // everyone out. The container is private and encrypted at rest by Azure; wrapping the
+        // keys with Key Vault too would add a resource and cost for little gain here.
+        builder.Services.AddDataProtection()
+            .SetApplicationName("TravelMemory")
+            .PersistKeysToAzureBlobStorage(services => services
+                .GetRequiredService<BlobServiceClient>()
+                .GetBlobContainerClient(DataProtectionContainer)
+                .GetBlobClient("keys.xml"));
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
         builder.Services.AddScoped<UserDirectory>();

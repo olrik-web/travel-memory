@@ -28,10 +28,11 @@ internal static class GetTripPhotoTimeline
             .OrderBy(photo => photo.CapturedAtTimelineLocal)
             .ThenBy(photo => photo.Id)
             .ToListAsync(cancellationToken);
+        var signer = await storage.GetSasSignerAsync(cancellationToken);
         var timeline = photos.Select(photo =>
         {
-            var thumbnail = storage.CreateReadGrant(photo.ThumbnailBlobName);
-            var web = storage.CreateReadGrant(photo.WebBlobName);
+            var thumbnail = storage.CreateReadGrant(signer, photo.ThumbnailBlobName);
+            var web = storage.CreateReadGrant(signer, photo.WebBlobName);
             return new PhotoTimelineItemResponse(
                 photo.Id,
                 photo.OriginalFileName,

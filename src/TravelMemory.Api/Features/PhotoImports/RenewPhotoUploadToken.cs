@@ -36,6 +36,7 @@ internal static class RenewPhotoUploadToken
             return TypedResults.Conflict("The file is no longer awaiting upload.");
         }
 
-        return TypedResults.Ok(storage.CreateUploadGrant(item.TemporaryBlobName));
+        var signer = await storage.GetSasSignerAsync(cancellationToken);
+        return TypedResults.Ok(storage.CreateUploadGrant(signer, item.TemporaryBlobName));
     }
 }

@@ -89,7 +89,7 @@ internal static class CreatePhotoImport
                         existingBatch,
                         existingItems,
                         storage,
-                        includeUploadGrants: true));
+                        uploadGrantSigner: await storage.GetSasSignerAsync(cancellationToken)));
             }
 
             var now = timeProvider.GetUtcNow();
@@ -135,7 +135,7 @@ internal static class CreatePhotoImport
                     batch,
                     items,
                     storage,
-                    includeUploadGrants: true));
+                    uploadGrantSigner: await storage.GetSasSignerAsync(cancellationToken)));
         }
     }
 
