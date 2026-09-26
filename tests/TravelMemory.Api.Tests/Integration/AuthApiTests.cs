@@ -36,6 +36,22 @@ public sealed class AuthApiTests(SqlServerFixture sqlServer) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Ignores_a_sign_out_without_a_session()
+    {
+        using var factory = CreateFactory(ownerId: null);
+        using var client = factory.CreateClient(
+            new() { AllowAutoRedirect = false });
+
+        // A cross-site form POST arrives without the SameSite=Lax cookie. Its response must
+        // not delete the cookie, or another site could sign the user out.
+        var response = await client.PostAsync("/api/auth/logout", content: null);
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/", response.Headers.Location?.OriginalString);
+        Assert.False(response.Headers.Contains("Set-Cookie"));
+    }
+
+    [Fact]
     public async Task Returns_the_signed_in_user()
     {
         using var factory = CreateFactory(Guid.NewGuid());
