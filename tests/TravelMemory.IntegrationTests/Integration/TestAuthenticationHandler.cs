@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace TravelMemory.Api.Tests.Integration;
+namespace TravelMemory.IntegrationTests.Integration;
 
 // Stands in for the OIDC cookie session: every request is signed in as the configured
 // owner, with the owner id claim that sign-in adds after resolving the user.

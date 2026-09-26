@@ -14,18 +14,22 @@ on Azurite Blob/Queue storage, and a React 19 + TypeScript + Vite PWA.
 
 ```sh
 dotnet build
-dotnet test tests/TravelMemory.Api.Tests    # needs Docker (SQL Server + Azurite containers)
+dotnet test --project tests/TravelMemory.Domain.Tests        # fast, no Docker
+dotnet test --project tests/TravelMemory.IntegrationTests    # needs Docker (SQL Server + Azurite containers)
 npm --prefix src/TravelMemory.Web run lint
 npm --prefix src/TravelMemory.Web run typecheck
 npm --prefix src/TravelMemory.Web test
 ```
+
+Tests use xunit v3 on Microsoft.Testing.Platform (opted in through `global.json`), so
+filter with `--filter-class` or `--filter-method` rather than `--filter`.
 
 Warnings are errors in .NET. Add EF Core migrations with the local `dotnet-ef` tool;
 never hand-edit generated migrations or the model snapshot.
 
 The web app's API types in `src/api/schema.d.ts` are generated; never edit them by hand.
 After changing an API contract, run
-`UPDATE_OPENAPI=1 dotnet test tests/TravelMemory.Api.Tests --filter OpenApiDocumentTests`
+`UPDATE_OPENAPI=1 dotnet test --project tests/TravelMemory.IntegrationTests --filter-class '*OpenApiDocumentTests'`
 and then `npm --prefix src/TravelMemory.Web run generate:api`.
 
 ## Architecture

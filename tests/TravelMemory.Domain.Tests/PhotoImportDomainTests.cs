@@ -1,6 +1,6 @@
 using TravelMemory.Domain.Photos;
 
-namespace TravelMemory.Api.Tests.Domain;
+namespace TravelMemory.Domain.Tests;
 
 public sealed class PhotoImportDomainTests
 {

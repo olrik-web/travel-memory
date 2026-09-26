@@ -1,6 +1,6 @@
 using TravelMemory.Domain.Trips;
 
-namespace TravelMemory.Api.Tests.Domain;
+namespace TravelMemory.Domain.Tests;
 
 public sealed class TripTests
 {

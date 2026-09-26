@@ -1,6 +1,6 @@
 using TravelMemory.Api.Features.Auth;
 
-namespace TravelMemory.Api.Tests.Auth;
+namespace TravelMemory.IntegrationTests.Auth;
 
 public sealed class SignInTests
 {

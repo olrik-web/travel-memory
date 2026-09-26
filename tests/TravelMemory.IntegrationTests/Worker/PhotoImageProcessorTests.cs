@@ -1,6 +1,6 @@
 using TravelMemory.Worker;
 
-namespace TravelMemory.Api.Tests.Worker;
+namespace TravelMemory.IntegrationTests.Worker;
 
 public sealed class PhotoImageProcessorTests : IDisposable
 {

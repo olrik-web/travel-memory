@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 using Testcontainers.Azurite;
 using TravelMemory.Api.Features.Trips;
 
-namespace TravelMemory.Api.Tests.Integration;
+namespace TravelMemory.IntegrationTests.Integration;
 
 [Collection(ContainerTestCollection.Name)]
 public sealed class TripApiTests(SqlServerFixture sqlServer) : IAsyncLifetime
@@ -27,9 +27,9 @@ public sealed class TripApiTests(SqlServerFixture sqlServer) : IAsyncLifetime
             .WithCommand("--skipApiVersionCheck")
             .Build();
 
-    public Task InitializeAsync() => azurite.StartAsync();
+    public async ValueTask InitializeAsync() => await azurite.StartAsync();
 
-    public async Task DisposeAsync() => await azurite.DisposeAsync();
+    public ValueTask DisposeAsync() => azurite.DisposeAsync();
 
     [Fact]
     public async Task Create_list_and_get_persist_and_remain_owner_scoped()
