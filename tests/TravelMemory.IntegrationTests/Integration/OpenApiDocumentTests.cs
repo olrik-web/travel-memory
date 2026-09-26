@@ -1,14 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Testcontainers.Azurite;
-using Xunit.Abstractions;
 
-namespace TravelMemory.Api.Tests.Integration;
+namespace TravelMemory.IntegrationTests.Integration;
 
 // The web app's TypeScript types are generated from src/TravelMemory.Web/openapi.json, so
 // this test keeps that committed document in sync with what the API actually serves.
 // To update it after an API change, run:
-//   UPDATE_OPENAPI=1 dotnet test tests/TravelMemory.Api.Tests --filter OpenApiDocumentTests
+//   UPDATE_OPENAPI=1 dotnet test --project tests/TravelMemory.IntegrationTests --filter-class '*OpenApiDocumentTests'
 [Collection(ContainerTestCollection.Name)]
 public sealed class OpenApiDocumentTests(SqlServerFixture sqlServer, ITestOutputHelper output)
     : IAsyncLifetime
@@ -23,9 +22,9 @@ public sealed class OpenApiDocumentTests(SqlServerFixture sqlServer, ITestOutput
             .WithCommand("--skipApiVersionCheck")
             .Build();
 
-    public Task InitializeAsync() => azurite.StartAsync();
+    public async ValueTask InitializeAsync() => await azurite.StartAsync();
 
-    public async Task DisposeAsync() => await azurite.DisposeAsync();
+    public ValueTask DisposeAsync() => azurite.DisposeAsync();
 
     [Fact]
     public async Task Committed_document_matches_the_api()
@@ -54,7 +53,7 @@ public sealed class OpenApiDocumentTests(SqlServerFixture sqlServer, ITestOutput
         Assert.True(
             expected == actual,
             "src/TravelMemory.Web/openapi.json is out of date. Run "
-            + "`UPDATE_OPENAPI=1 dotnet test tests/TravelMemory.Api.Tests --filter OpenApiDocumentTests`, "
+            + "`UPDATE_OPENAPI=1 dotnet test --project tests/TravelMemory.IntegrationTests --filter-class '*OpenApiDocumentTests'`, "
             + "then `npm --prefix src/TravelMemory.Web run generate:api`.");
     }
 

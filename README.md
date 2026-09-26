@@ -93,15 +93,17 @@ that each user only sees their own trips.
 ## Test and quality checks
 
 ```powershell
-dotnet test "tests\TravelMemory.Api.Tests\TravelMemory.Api.Tests.csproj"
+dotnet test --project "tests\TravelMemory.Domain.Tests"
+dotnet test --project "tests\TravelMemory.IntegrationTests"
 npm --prefix "src\TravelMemory.Web" run lint
 npm --prefix "src\TravelMemory.Web" run typecheck
 npm --prefix "src\TravelMemory.Web" test
 npm --prefix "src\TravelMemory.Web" run build
 ```
 
-The API tests use an ephemeral SQL Server 2025 container to verify migrations,
-create/list/open, persistence, and isolation between two owners. The photo import tests
+The domain tests run without Docker. The integration tests use an ephemeral SQL Server
+2025 container to verify migrations, create/list/open, persistence, sign-in mapping, and
+isolation between two owners. The photo import tests
 also use Azurite and verify JPEG/HEIC handling, orientation, the 500-file limit, SAS
 permissions, time adjustment, duplicates, retries, derivatives, original deletion, and
 visible retention after a processing failure.
@@ -204,7 +206,8 @@ src/
   TravelMemory.Worker/          Queue, EXIF, derivative, and cleanup pipeline
   TravelMemory.Web/             React/Vite PWA
 tests/
-  TravelMemory.Api.Tests/       Domain and SQL/Azurite-backed integration tests
+  TravelMemory.Domain.Tests/    Fast domain tests without Docker
+  TravelMemory.IntegrationTests/ API and worker tests against SQL Server and Azurite
 ```
 
 ## Local data

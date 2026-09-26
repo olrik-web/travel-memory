@@ -2,7 +2,7 @@ using DotNet.Testcontainers.Containers;
 using Microsoft.Data.SqlClient;
 using Testcontainers.MsSql;
 
-namespace TravelMemory.Api.Tests.Integration;
+namespace TravelMemory.IntegrationTests.Integration;
 
 // One SQL Server container is shared by all integration tests, and each test gets its own
 // database. SQL Server 2025 occasionally crashes during container startup on CI runners,
@@ -14,7 +14,7 @@ public sealed class SqlServerFixture : IAsyncLifetime
 
     private MsSqlContainer? container;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         for (var attempt = 1; ; attempt++)
         {
@@ -33,7 +33,7 @@ public sealed class SqlServerFixture : IAsyncLifetime
         }
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (container is not null)
         {

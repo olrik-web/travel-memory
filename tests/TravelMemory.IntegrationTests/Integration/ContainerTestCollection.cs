@@ -1,4 +1,4 @@
-namespace TravelMemory.Api.Tests.Integration;
+namespace TravelMemory.IntegrationTests.Integration;
 
 [CollectionDefinition(Name)]
 public sealed class ContainerTestCollection : ICollectionFixture<SqlServerFixture>

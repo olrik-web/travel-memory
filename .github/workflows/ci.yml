@@ -27,9 +27,11 @@ jobs:
       - run: dotnet restore
       - run: dotnet build --no-restore --configuration Release
 
+      - run: dotnet test --project tests/TravelMemory.Domain.Tests --no-build --configuration Release
+
       # Integration tests start SQL Server and Azurite through Testcontainers,
       # which uses the Docker engine preinstalled on ubuntu-latest.
-      - run: dotnet test tests/TravelMemory.Api.Tests --no-build --configuration Release
+      - run: dotnet test --project tests/TravelMemory.IntegrationTests --no-build --configuration Release
 
   web:
     runs-on: ubuntu-latest

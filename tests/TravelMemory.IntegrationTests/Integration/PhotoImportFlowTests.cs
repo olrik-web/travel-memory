@@ -20,7 +20,7 @@ using TravelMemory.Persistence.Data;
 using TravelMemory.Persistence.Photos;
 using TravelMemory.Worker;
 
-namespace TravelMemory.Api.Tests.Integration;
+namespace TravelMemory.IntegrationTests.Integration;
 
 [Collection(ContainerTestCollection.Name)]
 public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLifetime
@@ -35,9 +35,9 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
             .WithCommand("--skipApiVersionCheck")
             .Build();
 
-    public Task InitializeAsync() => azurite.StartAsync();
+    public async ValueTask InitializeAsync() => await azurite.StartAsync();
 
-    public async Task DisposeAsync() => await azurite.DisposeAsync();
+    public ValueTask DisposeAsync() => azurite.DisposeAsync();
 
     [Fact]
     public async Task Imports_jpeg_and_heic_with_offset_deduplication_and_safe_cleanup()

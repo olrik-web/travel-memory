@@ -5,7 +5,7 @@ using Testcontainers.Azurite;
 using TravelMemory.Api.Auth;
 using TravelMemory.Api.Features.Auth;
 
-namespace TravelMemory.Api.Tests.Integration;
+namespace TravelMemory.IntegrationTests.Integration;
 
 [Collection(ContainerTestCollection.Name)]
 public sealed class AuthApiTests(SqlServerFixture sqlServer) : IAsyncLifetime
@@ -19,9 +19,9 @@ public sealed class AuthApiTests(SqlServerFixture sqlServer) : IAsyncLifetime
             .WithCommand("--skipApiVersionCheck")
             .Build();
 
-    public Task InitializeAsync() => azurite.StartAsync();
+    public async ValueTask InitializeAsync() => await azurite.StartAsync();
 
-    public async Task DisposeAsync() => await azurite.DisposeAsync();
+    public ValueTask DisposeAsync() => azurite.DisposeAsync();
 
     [Fact]
     public async Task Answers_api_calls_without_a_session_with_401()
