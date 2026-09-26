@@ -19,6 +19,16 @@ export function startSignIn() {
   return true;
 }
 
+// A sign-in that worked is not a loop, so a later sign-out and sign-in within the retry
+// window must still redirect.
+export function clearSignInAttempt() {
+  try {
+    sessionStorage.removeItem(lastAttemptKey);
+  } catch {
+    // Nothing to clear without storage.
+  }
+}
+
 function readLastAttempt() {
   try {
     const value = sessionStorage.getItem(lastAttemptKey);
