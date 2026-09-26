@@ -1,5 +1,6 @@
 import type { ChangeEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { describeSkippedFiles } from './photoSelection';
 import {
   describeItemState,
   formatFileCount,
@@ -25,6 +26,7 @@ function PhotoImport({ tripId }: { tripId: string }) {
     isLoading,
     isUploading,
     error,
+    skippedFiles,
     adjustmentMinutes,
     setAdjustmentMinutes,
     preview,
@@ -66,6 +68,20 @@ function PhotoImport({ tripId }: { tripId: string }) {
         </div>
       )}
 
+      {skippedFiles.length > 0 && (
+        <div className="status-card" role="status">
+          <p>{describeSkippedFiles(skippedFiles)}</p>
+          <details>
+            <summary>Show skipped files</summary>
+            <ul className="skipped-files">
+              {skippedFiles.map((file, index) => (
+                <li key={`${index}-${file.name}`}>{file.name}</li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
+
       {isLoading && (
         <div className="status-card" role="status">
           Loading import status...
@@ -78,7 +94,7 @@ function PhotoImport({ tripId }: { tripId: string }) {
           <p>
             {batch
               ? `${formatFileCount(awaitingUpload.length)} missing. Select them again; files already uploaded are skipped.`
-              : 'Select up to 500 JPEG or HEIC files. Four files are uploaded at a time.'}
+              : 'Select up to 500 JPEG or HEIC photos. Other files, such as videos, are skipped. Four files are uploaded at a time.'}
           </p>
           <label className="button button-primary file-picker">
             {isUploading ? 'Uploading...' : batch ? 'Select missing files' : 'Select photos'}
