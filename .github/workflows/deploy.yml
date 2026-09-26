@@ -84,6 +84,9 @@ jobs:
       - name: Deploy infrastructure
         env:
           OIDC_CLIENT_SECRET: ${{ secrets.OIDC_CLIENT_SECRET }}
+          # Optional. Resources go to the resource group's region unless this is set, for
+          # example when that region does not accept new SQL servers.
+          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
         run: |
           az deployment group create \
             --resource-group "$RESOURCE_GROUP" \
@@ -96,6 +99,7 @@ jobs:
               oidcClientId="${{ vars.OIDC_CLIENT_ID }}" \
               oidcClientSecret="$OIDC_CLIENT_SECRET" \
               budgetContactEmail="${{ vars.BUDGET_ALERT_EMAIL }}" \
+              ${AZURE_LOCATION:+location="$AZURE_LOCATION"} \
             --query properties.outputs --output json > outputs.json
 
       # Runs inside Azure with the app identity, so the database firewall stays closed to

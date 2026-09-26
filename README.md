@@ -300,8 +300,15 @@ Portal labels change now and then, so some names may differ slightly.
    | `OIDC_AUTHORITY` | `https://<external-domain>.ciamlogin.com/<external-tenant-id>/v2.0` |
    | `OIDC_CLIENT_ID` | Client id of `Travel Memory web` |
    | `BUDGET_ALERT_EMAIL` | Where budget alerts go |
+   | `AZURE_LOCATION` | Optional region for all resources, for example `swedencentral` |
 
    Add the web app's client secret as the environment secret `OIDC_CLIENT_SECRET`.
+
+   Without `AZURE_LOCATION`, resources go to the resource group's region. Popular regions
+   sometimes stop accepting new SQL servers (`RegionDoesNotAllowProvisioning`); North
+   Europe did in September 2026, and Sweden Central worked instead. To move, delete the
+   resources inside the resource group, but not the group itself, because it holds the
+   deploy identity's role assignments. Then set `AZURE_LOCATION` and deploy again.
 
 ### Deploy
 
