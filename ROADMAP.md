@@ -109,15 +109,16 @@ are the most transferable .NET skills and get harder to retrofit as the data mod
 - **Done:** fail recovered jobs that have used up their attempts instead of retrying them
   forever after the worker process dies, and dispatch a job promptly after a failed enqueue
   ([#32], [#33]).
-- Propagate trace context from the API through the queue into the worker so an import is
-  one distributed trace in the Aspire dashboard ([#7]).
+- **Done:** propagate trace context from the API through the queue into the worker so an
+  import is one distributed trace in the Aspire dashboard ([#7]).
 - **Done:** add a GitHub Actions workflow that builds, lints, type-checks, and runs the
   .NET and frontend tests on every push ([#13]).
 - Add one end-to-end test with `Aspire.Hosting.Testing` that runs the real resource graph
   ([#10]).
-- Replace the Development authentication handler with OIDC. Use Keycloak through the Aspire
-  integration locally and an equivalent hosted provider in Azure. Keep the `OwnerId`
-  boundary unchanged ([#14], [#5]).
+- **Done locally:** replace the Development authentication handler with OIDC through
+  Keycloak and the Aspire integration, keeping the `OwnerId` boundary unchanged ([#14],
+  [#5]). The hosted provider in Azure, Microsoft Entra External ID, is configured as part
+  of the deployment ([#15]).
 - Deploy to Azure Container Apps Consumption, Azure SQL, Blob Storage, and Storage Queue
   with `aspire deploy` or `azd`. Use HTTPS-only SAS tokens and managed identity outside
   Development, and define how migrations run there ([#15]).
