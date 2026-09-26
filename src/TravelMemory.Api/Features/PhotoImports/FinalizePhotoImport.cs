@@ -42,7 +42,9 @@ internal static class FinalizePhotoImport
         var batch = await dbContext.PhotoImportBatches.SingleOrDefaultAsync(
             value => value.Id == batchId && value.OwnerId == currentUser.OwnerId,
             cancellationToken);
-        if (batch is null)
+        // A trip that is being deleted accepts no new work (see DeleteTrip).
+        if (batch is null
+            || !await dbContext.Trips.AnyAsync(trip => trip.Id == batch.TripId, cancellationToken))
         {
             return TypedResults.NotFound();
         }

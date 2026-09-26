@@ -936,6 +936,76 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
             job => !context.PhotoImportBatches.Any(batch => batch.Id == job.ImportBatchId)));
     }
 
+    [Fact]
+    public async Task Removes_its_derivatives_when_the_trip_is_deleted_while_a_photo_processes()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var jpeg = CreateOrientedJpeg();
+        var batch = await CreateSingleFileBatchAsync(client, trip.Id, "racing.jpg", "image/jpeg", jpeg);
+        await UploadAndCompleteAsync(client, batch.Id, Assert.Single(batch.Items), jpeg);
+        await ProcessAllPendingJobsAsync();
+        var finalize = await client.PostAsJsonAsync(
+            $"/api/photo-imports/{batch.Id}/finalize",
+            new FinalizePhotoImportRequest(0));
+        Assert.Equal(HttpStatusCode.Accepted, finalize.StatusCode);
+        var processJobId = await GetProcessJobIdAsync(Assert.Single(batch.Items).Id);
+
+        // The trip's rows are deleted, as DeleteTrip does, after the worker uploaded the
+        // derivatives and just before it saves the photo.
+        await using (var context = CreateDbContext(
+            new BeforePhotoInsertInterceptor(async () =>
+            {
+                await using var deletion = CreateDbContext();
+                await deletion.Photos.Where(photo => photo.TripId == trip.Id).ExecuteDeleteAsync();
+                await deletion.PhotoImportBatches
+                    .Where(value => value.TripId == trip.Id)
+                    .ExecuteDeleteAsync();
+            })))
+        {
+            var processor = new PhotoJobProcessor(
+                context,
+                new BlobServiceClient(azurite.GetConnectionString()),
+                new PhotoImageProcessor(),
+                TimeProvider.System,
+                NullLogger<PhotoJobProcessor>.Instance);
+            await processor.ProcessAsync(processJobId, CancellationToken.None);
+        }
+
+        var derivatives = new BlobServiceClient(azurite.GetConnectionString())
+            .GetBlobContainerClient(PhotoStorageNames.PermanentContainer);
+        Assert.Equal(0, await CountBlobsAsync(derivatives));
+    }
+
+    [Fact]
+    public async Task Refuses_new_import_work_for_a_trip_that_is_being_deleted()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var jpeg = CreateOrientedJpeg();
+        var batch = await CreateSingleFileBatchAsync(client, trip.Id, "late.jpg", "image/jpeg", jpeg);
+        var item = Assert.Single(batch.Items);
+        await UploadAndCompleteAsync(client, batch.Id, item, jpeg);
+        await ProcessAllPendingJobsAsync();
+        await using (var context = CreateDbContext())
+        {
+            var stored = await context.Trips.SingleAsync(value => value.Id == trip.Id);
+            stored.MarkDeleting(DateTimeOffset.UtcNow);
+            await context.SaveChangesAsync();
+        }
+
+        var finalize = await client.PostAsJsonAsync(
+            $"/api/photo-imports/{batch.Id}/finalize",
+            new FinalizePhotoImportRequest(0));
+
+        Assert.Equal(HttpStatusCode.NotFound, finalize.StatusCode);
+        await using var verification = CreateDbContext();
+        Assert.False(await verification.PhotoProcessingJobs.AnyAsync(
+            job => job.ImportItemId == item.Id && job.Kind == PhotoProcessingJobKind.Process));
+    }
+
     private TravelMemoryApplicationFactory CreateFactory() =>
         new(databaseConnectionString, azurite.GetConnectionString(), OwnerId);
 

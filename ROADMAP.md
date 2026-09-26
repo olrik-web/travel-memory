@@ -164,12 +164,14 @@ daily use: without it, a mistaken import cannot be cleaned up.
 - **Done:** edit a trip's title and dates with the same rules as creating one ([#56]).
 - **Done:** delete a photo: derivatives first, then the row, so a failure can only leave a broken
   photo that the next attempt removes, never an unknown blob ([#57]).
-- **Done:** delete a trip with its photos, imports, and jobs: refuse while a photo is processing,
-  hide the trip and cancel pending jobs in one transaction, delete every blob under the
-  trip's prefix in both containers, then the rows. An interrupted deletion completes when
-  retried. A storage lifecycle rule in Azure removes stray originals after 8 days ([#58]).
+- **Done:** delete a trip with its photos, imports, and jobs: refuse while a photo is
+  processing, hide the trip and remove its jobs in one save, delete the photo and import
+  rows, then every blob under the trip's prefix in both containers, and the trip row last.
+  Endpoints refuse new work for a hidden trip, a worker that loses its rows removes the
+  derivatives it uploaded, and an interrupted deletion completes when retried. A storage
+  lifecycle rule in Azure removes stray originals after 8 days ([#58]).
 
-Deletion runs in the API request rather than as a worker job: with blob batch deletes,
+Deletion runs in the API request rather than as a worker job: with parallel blob deletes,
 even a 500-photo trip takes seconds, and every step is idempotent.
 
 ### Exit criteria
