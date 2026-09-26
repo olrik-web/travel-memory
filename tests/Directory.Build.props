@@ -1,0 +1,16 @@
+<Project>
+  <!-- MSBuild stops at the nearest Directory.Build.props, so the repository-wide one is
+       imported explicitly before the settings shared by the test projects. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!-- xunit.v3 test projects are executables run by Microsoft.Testing.Platform. -->
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>
