@@ -58,8 +58,9 @@ Organize by feature (vertical slices), not by technical layer.
 
 - Never push to `main`; it is protected. Work on a branch and open a PR, which is
   squash-merged.
-- Bugs, refactors, and chores are tracked as GitHub issues. Keep one issue per PR and
-  reference it in the description (`Closes #N`).
+- Bugs, refactors, and chores are tracked as GitHub issues. Prefer one issue per PR.
+  Closely related issues that change the same code may share one. Reference every issue
+  a PR closes in its description (`Closes #N`).
 - Commit as `olrik-web <molrik@outlook.com>` (set `git config user.name` and
   `user.email` before the first commit).
 - No `Co-Authored-By`, `Claude-Session`, or other AI attribution in commits, and no

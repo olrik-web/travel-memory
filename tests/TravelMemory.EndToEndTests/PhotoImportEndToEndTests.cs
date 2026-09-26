@@ -6,6 +6,8 @@ using System.Text.Json.Nodes;
 using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace TravelMemory.EndToEndTests;
 
@@ -15,6 +17,10 @@ public sealed class PhotoImportEndToEndTests
 {
     private static readonly Uri WebOrigin = new("http://localhost:5173");
     private static readonly TimeSpan StartupTimeout = TimeSpan.FromMinutes(10);
+    // All SQL Server starts together fit in the startup timeout (3 × 3 of 10 minutes), so
+    // giving up on SQL Server is reported before the startup as a whole times out.
+    private static readonly TimeSpan SqlServerStartTimeout = TimeSpan.FromMinutes(3);
+    private const int MaxSqlServerStarts = 3;
     private static readonly TimeSpan ProcessingTimeout = TimeSpan.FromMinutes(2);
 
     [Fact]
@@ -22,15 +28,34 @@ public sealed class PhotoImportEndToEndTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         // Keycloak's issuer and the realm's allowed redirect URI depend on the AppHost's
-        // fixed ports, so the testing builder must not randomize them.
+        // fixed ports, so the testing builder must not randomize them. Without data volumes
+        // the run starts empty and leaves nothing in the local development data.
         var builder = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.TravelMemory_AppHost>(
-                ["DcpPublisher:RandomizePorts=false"],
+                ["DcpPublisher:RandomizePorts=false", "TravelMemory:UseDataVolumes=false"],
                 cancellationToken);
+        // By default a resource gives up when a dependency stops, so the API would fail to
+        // start while SQL Server is being restarted below; keep it waiting instead.
+        builder.Services.Configure<ResourceNotificationServiceOptions>(options =>
+            options.DefaultWaitBehavior = WaitBehavior.WaitOnResourceUnavailable);
         await using var app = await builder.BuildAsync(cancellationToken);
         using var startup = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         startup.CancelAfter(StartupTimeout);
-        await app.StartAsync(startup.Token);
+        // Starting waits for SQL Server, so it is watched, and restarted if needed, while
+        // the application starts rather than afterwards. If the watcher gives up, it stops
+        // the start as well, and its reason is what the test reports.
+        var sqlServerStarted = WatchSqlServerAsync(app, startup);
+        try
+        {
+            await app.StartAsync(startup.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            await sqlServerStarted;
+            throw;
+        }
+
+        await sqlServerStarted;
         await app.ResourceNotifications.WaitForResourceHealthyAsync("api", startup.Token);
         await app.ResourceNotifications.WaitForResourceAsync(
             "worker",
@@ -124,6 +149,83 @@ public sealed class PhotoImportEndToEndTests
             cancellationToken);
         Assert.Equal(HttpStatusCode.OK, derivative.StatusCode);
         Assert.Equal("image/jpeg", derivative.Content.Headers.ContentType?.MediaType);
+    }
+
+    // SQL Server 2025 sometimes crashes while its container starts on CI runners (see
+    // SqlServerFixture). Everything else waits for it, so restart it a few times instead
+    // of waiting for the whole startup timeout, and name it when it keeps failing.
+    // With dependents waiting on SQL Server, nothing else would stop the start when the
+    // watcher gives up, so it cancels the start before reporting why.
+    private static async Task WatchSqlServerAsync(
+        DistributedApplication app,
+        CancellationTokenSource startup)
+    {
+        try
+        {
+            await WaitForSqlServerAsync(app, startup.Token);
+        }
+        catch when (!startup.IsCancellationRequested)
+        {
+            await startup.CancelAsync();
+            throw;
+        }
+    }
+
+    private static async Task WaitForSqlServerAsync(
+        DistributedApplication app,
+        CancellationToken cancellationToken)
+    {
+        for (var start = 1; ; start++)
+        {
+            using var attempt = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            attempt.CancelAfter(SqlServerStartTimeout);
+            string? stoppedState = null;
+            try
+            {
+                // A restart first stops the resource, which reports Exited again, so a later
+                // start is only judged once its container is running.
+                if (start > 1)
+                {
+                    await app.ResourceNotifications.WaitForResourceAsync(
+                        "sql",
+                        KnownResourceStates.Running,
+                        attempt.Token);
+                }
+
+                var resourceEvent = await app.ResourceNotifications.WaitForResourceAsync(
+                    "sql",
+                    resourceEvent =>
+                        resourceEvent.Snapshot.HealthStatus == HealthStatus.Healthy
+                        || KnownResourceStates.TerminalStates.Contains(
+                            resourceEvent.Snapshot.State?.Text),
+                    attempt.Token);
+                if (resourceEvent.Snapshot.HealthStatus == HealthStatus.Healthy)
+                {
+                    return;
+                }
+
+                stoppedState = resourceEvent.Snapshot.State?.Text;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                stoppedState = $"not healthy after {SqlServerStartTimeout.TotalMinutes} minutes";
+            }
+
+            if (start == MaxSqlServerStarts)
+            {
+                Assert.Fail($"SQL Server did not start after {start} attempts; last state: {stoppedState}.");
+            }
+
+            TestContext.Current.SendDiagnosticMessage(
+                $"SQL Server start {start} failed ({stoppedState}); restarting it.");
+            var restart = await app.ResourceCommands.ExecuteCommandAsync(
+                "sql",
+                KnownResourceCommands.RestartCommand,
+                cancellationToken);
+            Assert.True(
+                restart.Success,
+                $"SQL Server could not be restarted: {restart.Message}");
+        }
     }
 
     // Vite reports Running before it serves requests, and its proxy is the only way in.

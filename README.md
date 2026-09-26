@@ -112,7 +112,11 @@ visible retention after a processing failure.
 The end-to-end test starts the real Aspire resource graph with `Aspire.Hosting.Testing`.
 It signs in as `alice` through Keycloak's login form, creates a trip, and imports one
 photo through the API, Blob Storage, and the worker. It needs Docker, the web app's npm
-packages (`npm ci`), and free ports 5173 and 8180, so stop a running AppHost first.
+packages (`npm ci`), and free ports 5173 and 8180, so stop a running AppHost first. It
+runs SQL Server and Azurite without data volumes (`TravelMemory:UseDataVolumes=false`), so
+each run starts empty and leaves the local development data alone. If SQL Server crashes
+while its container starts, which SQL Server 2025 occasionally does on CI runners, the test
+restarts it up to twice before failing with a message that names it.
 
 ## API
 
