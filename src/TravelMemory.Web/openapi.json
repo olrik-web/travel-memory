@@ -113,6 +113,26 @@
         }
       }
     },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "GetCurrentUser",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUserResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/trips": {
       "post": {
         "tags": [
@@ -596,6 +616,17 @@
           }
         }
       },
+      "CurrentUserResponse": {
+        "required": [
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "FinalizePhotoImportRequest": {
         "required": [
           "timeAdjustmentMinutes"
@@ -1060,6 +1091,9 @@
     },
     {
       "name": "Photos"
+    },
+    {
+      "name": "Auth"
     },
     {
       "name": "Trips"

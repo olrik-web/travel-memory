@@ -10,6 +10,7 @@
     <PackageReference Include="Aspire.Azure.Storage.Blobs" Version="13.5.3" />
     <PackageReference Include="Aspire.Azure.Storage.Queues" Version="13.5.3" />
     <PackageReference Include="Aspire.Microsoft.EntityFrameworkCore.SqlServer" Version="13.5.3" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.11" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
   </ItemGroup>
 

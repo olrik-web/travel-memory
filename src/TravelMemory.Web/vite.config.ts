@@ -48,6 +48,9 @@ export default defineConfig({
       '/api': {
         target: process.env.API_HTTPS || process.env.API_HTTP,
         changeOrigin: true,
+        // Sends X-Forwarded-Host and -Proto, so the API builds its OIDC callback URL for
+        // this dev server rather than for its own port.
+        xfwd: true,
       },
     },
   },

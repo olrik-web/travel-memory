@@ -1,4 +1,5 @@
 import { Link, Outlet } from 'react-router-dom';
+import { UserMenu } from '../features/auth/UserMenu';
 
 export function AppLayout() {
   return (
@@ -13,6 +14,7 @@ export function AppLayout() {
             <small>Your trips as memories</small>
           </span>
         </Link>
+        <UserMenu />
       </header>
       <Outlet />
     </div>
