@@ -76,7 +76,7 @@ export interface paths {
             cookie?: never;
         };
         get: operations["GetTrip"];
-        put?: never;
+        put: operations["UpdateTrip"];
         post?: never;
         delete?: never;
         options?: never;
@@ -336,6 +336,13 @@ export interface components {
             /** Format: date-time */
             createdAtUtc: string;
         };
+        UpdateTripRequest: {
+            title: null | string;
+            /** Format: date */
+            startDate: null | string;
+            /** Format: date */
+            endDate: null | string;
+        };
         UploadGrantResponse: {
             /** Format: uri */
             uploadUrl: string;
@@ -531,6 +538,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TripResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpdateTrip: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTripRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
                 };
             };
             /** @description Not Found */

@@ -1,20 +1,37 @@
 import { type FormEvent, useState } from 'react';
 import { ApiError } from '../../api/http';
-import { useCreateTrip } from './tripQueries';
 import { maxTitleLength, type TripFieldErrors, validateTrip } from './tripValidation';
 import type { CreateTripRequest } from './types';
 
-interface TripFormProps {
-  onCreated: (tripId: string) => void;
+export interface TripFormValues {
+  title: string;
+  startDate: string;
+  endDate: string;
 }
 
-export function TripForm({ onCreated }: TripFormProps) {
-  const [title, setTitle] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+const emptyValues: TripFormValues = { title: '', startDate: '', endDate: '' };
+
+interface TripFormProps {
+  initialValues?: TripFormValues;
+  submitLabel: string;
+  isSubmitting: boolean;
+  // Rejects with an ApiError when the API refuses the trip; its field errors are shown
+  // next to the fields.
+  onSubmit: (request: CreateTripRequest) => Promise<void>;
+}
+
+// Used both to create and to edit a trip; the page owns the request and what happens next.
+export function TripForm({
+  initialValues = emptyValues,
+  submitLabel,
+  isSubmitting,
+  onSubmit,
+}: TripFormProps) {
+  const [title, setTitle] = useState(initialValues.title);
+  const [startDate, setStartDate] = useState(initialValues.startDate);
+  const [endDate, setEndDate] = useState(initialValues.endDate);
   const [fieldErrors, setFieldErrors] = useState<TripFieldErrors>({});
   const [submitError, setSubmitError] = useState<string>();
-  const createTrip = useCreateTrip();
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -33,8 +50,7 @@ export function TripForm({ onCreated }: TripFormProps) {
     }
 
     try {
-      const trip = await createTrip.mutateAsync(request);
-      onCreated(trip.id);
+      await onSubmit(request);
     } catch (requestError: unknown) {
       if (requestError instanceof ApiError && requestError.problem?.errors) {
         setFieldErrors(requestError.problem.errors);
@@ -42,7 +58,7 @@ export function TripForm({ onCreated }: TripFormProps) {
         setSubmitError(
           requestError instanceof Error
             ? requestError.message
-            : 'The trip could not be created. Try again.',
+            : 'The trip could not be saved. Try again.',
         );
       }
     }
@@ -109,8 +125,8 @@ export function TripForm({ onCreated }: TripFormProps) {
       )}
 
       <div className="form-actions">
-        <button className="button button-primary" type="submit" disabled={createTrip.isPending}>
-          {createTrip.isPending ? 'Saving...' : 'Create trip'}
+        <button className="button button-primary" type="submit" disabled={isSubmitting}>
+          {isSubmitting ? 'Saving...' : submitLabel}
         </button>
       </div>
     </form>

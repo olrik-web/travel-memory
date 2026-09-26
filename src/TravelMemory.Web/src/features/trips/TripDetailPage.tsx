@@ -45,6 +45,9 @@ export function TripDetailPage() {
             <Link className="button button-primary" to={`/trips/${trip.id}/import`}>
               Import photos
             </Link>
+            <Link className="button button-secondary" to={`/trips/${trip.id}/edit`}>
+              Edit trip
+            </Link>
           </div>
         </article>
       )}

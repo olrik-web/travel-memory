@@ -7,6 +7,11 @@ public sealed record CreateTripRequest(
     DateOnly? StartDate,
     DateOnly? EndDate);
 
+public sealed record UpdateTripRequest(
+    string? Title,
+    DateOnly? StartDate,
+    DateOnly? EndDate);
+
 public sealed record TripResponse(
     Guid Id,
     string Title,

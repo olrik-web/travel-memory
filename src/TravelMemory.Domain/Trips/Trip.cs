@@ -63,6 +63,19 @@ public sealed class Trip
             createdAt.ToUniversalTime());
     }
 
+    public void Update(string? title, DateOnly? startDate, DateOnly? endDate)
+    {
+        var errors = Validate(title, startDate, endDate);
+        if (errors.Count > 0)
+        {
+            throw new TripValidationException(errors);
+        }
+
+        Title = title!.Trim();
+        StartDate = startDate;
+        EndDate = endDate;
+    }
+
     private static Dictionary<string, string[]> Validate(
         string? title,
         DateOnly? startDate,
