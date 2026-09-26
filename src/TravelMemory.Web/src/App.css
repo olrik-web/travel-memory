@@ -577,11 +577,16 @@ h2 {
 .photo-card {
   display: grid;
   overflow: hidden;
+  margin: 0;
   border: 1px solid #ded8ca;
   border-radius: 1rem;
   color: inherit;
   background: #fffdf7;
   text-decoration: none;
+}
+
+.photo-card a {
+  display: block;
 }
 
 .photo-card img {
@@ -591,11 +596,29 @@ h2 {
   background: #e8e1d5;
 }
 
-.photo-card span {
+.photo-card figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   padding: 0.75rem 0.9rem;
   color: #59635e;
   font-size: 0.8rem;
   font-weight: 700;
+}
+
+.photo-delete {
+  border: 0;
+  padding: 0;
+  color: #a4432a;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.photo-delete:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 @media (max-width: 44rem) {

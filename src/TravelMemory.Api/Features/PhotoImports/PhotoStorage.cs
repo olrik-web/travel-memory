@@ -137,6 +137,19 @@ internal sealed class PhotoStorage(
         }
     }
 
+    public async Task DeleteDerivativesAsync(
+        string webBlobName,
+        string thumbnailBlobName,
+        CancellationToken cancellationToken)
+    {
+        var container = blobServiceClient.GetBlobContainerClient(
+            PhotoStorageNames.PermanentContainer);
+        await container.GetBlobClient(webBlobName)
+            .DeleteIfExistsAsync(cancellationToken: cancellationToken);
+        await container.GetBlobClient(thumbnailBlobName)
+            .DeleteIfExistsAsync(cancellationToken: cancellationToken);
+    }
+
     public Task EnqueueAsync(PhotoProcessingJob job, CancellationToken cancellationToken)
     {
         var message = JsonSerializer.Serialize(new PhotoQueueMessage(job.Id, job.TraceParent));

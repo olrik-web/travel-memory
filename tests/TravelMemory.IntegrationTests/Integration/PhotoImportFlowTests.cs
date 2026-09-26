@@ -753,6 +753,67 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
         Assert.Equal(1, await CountQueueMessagesAsync(queue));
     }
 
+    [Fact]
+    public async Task Deletes_a_photo_with_its_derivatives_and_allows_importing_it_again()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var jpeg = CreateOrientedJpeg();
+        await ImportAndFinalizeAsync(client, trip.Id, "delete-me.jpg", jpeg);
+        var photo = Assert.Single((await GetTimelineAsync(client, trip.Id)).Items);
+        var permanent = new BlobServiceClient(azurite.GetConnectionString())
+            .GetBlobContainerClient(PhotoStorageNames.PermanentContainer);
+        Assert.Equal(2, await CountBlobsAsync(permanent));
+
+        using (var otherFactory = new TravelMemoryApplicationFactory(
+            databaseConnectionString,
+            azurite.GetConnectionString(),
+            Guid.NewGuid()))
+        using (var otherClient = otherFactory.CreateClient())
+        {
+            var foreign = await otherClient.DeleteAsync($"/api/trips/{trip.Id}/photos/{photo.Id}");
+            Assert.Equal(HttpStatusCode.NotFound, foreign.StatusCode);
+        }
+
+        var deleted = await client.DeleteAsync($"/api/trips/{trip.Id}/photos/{photo.Id}");
+
+        Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+        Assert.Empty((await GetTimelineAsync(client, trip.Id)).Items);
+        Assert.Equal(0, await CountBlobsAsync(permanent));
+        var repeated = await client.DeleteAsync($"/api/trips/{trip.Id}/photos/{photo.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, repeated.StatusCode);
+
+        // The deleted photo no longer counts as a duplicate.
+        var reimported = await ImportAndFinalizeAsync(client, trip.Id, "delete-me-again.jpg", jpeg);
+        var item = Assert.Single(reimported.Items);
+        Assert.Equal(nameof(PhotoImportItemOutcome.Imported), item.Outcome);
+        Assert.Single((await GetTimelineAsync(client, trip.Id)).Items);
+    }
+
+    private async Task<PhotoImportBatchResponse> ImportAndFinalizeAsync(
+        HttpClient client,
+        Guid tripId,
+        string fileName,
+        byte[] content)
+    {
+        var batch = await CreateSingleFileBatchAsync(client, tripId, fileName, "image/jpeg", content);
+        await UploadAndCompleteAsync(client, batch.Id, Assert.Single(batch.Items), content);
+        await ProcessAllPendingJobsAsync();
+        var finalize = await client.PostAsJsonAsync(
+            $"/api/photo-imports/{batch.Id}/finalize",
+            new FinalizePhotoImportRequest(0));
+        Assert.Equal(HttpStatusCode.Accepted, finalize.StatusCode);
+        await ProcessAllPendingJobsAsync();
+        return await GetBatchAsync(client, batch.Id);
+    }
+
+    private static async Task<PhotoTimelineResponse> GetTimelineAsync(
+        HttpClient client,
+        Guid tripId) =>
+        Assert.IsType<PhotoTimelineResponse>(
+            await client.GetFromJsonAsync<PhotoTimelineResponse>($"/api/trips/{tripId}/photos"));
+
     private TravelMemoryApplicationFactory CreateFactory() =>
         new(databaseConnectionString, azurite.GetConnectionString(), OwnerId);
 

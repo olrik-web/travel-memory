@@ -113,6 +113,42 @@
         }
       }
     },
+    "/api/trips/{tripId}/photos/{photoId}": {
+      "delete": {
+        "tags": [
+          "Photos"
+        ],
+        "operationId": "DeletePhoto",
+        "parameters": [
+          {
+            "name": "tripId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "photoId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/auth/me": {
       "get": {
         "tags": [

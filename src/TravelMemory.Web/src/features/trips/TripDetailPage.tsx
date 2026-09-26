@@ -1,6 +1,7 @@
 import { Link, useParams } from 'react-router-dom';
 import { ApiError } from '../../api/http';
-import { usePhotoTimeline } from '../photos/photoQueries';
+import { useDeletePhoto, usePhotoTimeline } from '../photos/photoQueries';
+import type { PhotoTimelineItem } from '../photos/types';
 import { formatTripDates } from './tripDates';
 import { useTrip } from './tripQueries';
 
@@ -16,7 +17,18 @@ export function TripDetailPage() {
       : 'The trip could not be loaded. Try again.'
     : undefined;
   const photos = timelineQuery.data?.items ?? [];
-  const photoError = timelineQuery.error ? 'The photo timeline could not be loaded.' : undefined;
+  const deletePhoto = useDeletePhoto(tripId ?? '');
+  const photoError = timelineQuery.error
+    ? 'The photo timeline could not be loaded.'
+    : deletePhoto.error
+      ? 'The photo could not be deleted. Try again.'
+      : undefined;
+
+  function confirmDelete(photo: PhotoTimelineItem) {
+    if (window.confirm(`Delete ${photo.fileName}? This cannot be undone.`)) {
+      deletePhoto.mutate(photo.id);
+    }
+  }
 
   return (
     <main className="page page-narrow">
@@ -73,22 +85,29 @@ export function TripDetailPage() {
           </div>
           <div className="photo-grid">
             {photos.map((photo) => (
-              <a
-                className="photo-card"
-                href={photo.webUrl}
-                key={photo.id}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <img
-                  src={photo.thumbnailUrl}
-                  alt={photo.fileName}
-                  width={photo.thumbnailWidth}
-                  height={photo.thumbnailHeight}
-                  loading="lazy"
-                />
-                <span>{formatPhotoTime(photo.capturedAtTimelineLocal)}</span>
-              </a>
+              <figure className="photo-card" key={photo.id}>
+                <a href={photo.webUrl} target="_blank" rel="noreferrer">
+                  <img
+                    src={photo.thumbnailUrl}
+                    alt={photo.fileName}
+                    width={photo.thumbnailWidth}
+                    height={photo.thumbnailHeight}
+                    loading="lazy"
+                  />
+                </a>
+                <figcaption>
+                  <span>{formatPhotoTime(photo.capturedAtTimelineLocal)}</span>
+                  <button
+                    className="photo-delete"
+                    type="button"
+                    onClick={() => confirmDelete(photo)}
+                    disabled={deletePhoto.isPending}
+                    aria-label={`Delete ${photo.fileName}`}
+                  >
+                    Delete
+                  </button>
+                </figcaption>
+              </figure>
             ))}
           </div>
         </section>
