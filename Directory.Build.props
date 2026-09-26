@@ -1,5 +1,7 @@
 <Project>
   <PropertyGroup>
+    <!-- Only for .NET projects: the web app's .esproj uses the JavaScript SDK. -->
+    <TargetFramework Condition="'$(MSBuildProjectExtension)' == '.csproj'">net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
