@@ -2,6 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ApiError } from '../../api/http';
 import { useDeletePhoto, usePhotoTimeline } from '../photos/photoQueries';
 import type { PhotoTimelineItem } from '../photos/types';
+import { DeleteTripSection } from './DeleteTripSection';
 import { formatTripDates } from './tripDates';
 import { useTrip } from './tripQueries';
 
@@ -112,6 +113,8 @@ export function TripDetailPage() {
           </div>
         </section>
       )}
+
+      {trip && <DeleteTripSection trip={trip} />}
     </main>
   );
 }

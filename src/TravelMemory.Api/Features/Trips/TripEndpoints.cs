@@ -18,6 +18,8 @@ internal static class TripEndpoints
         trips.MapPut("/{id}", UpdateTrip.HandleAsync)
             .WithName("UpdateTrip")
             .ProducesValidationProblem();
+        trips.MapDelete("/{id}", DeleteTrip.HandleAsync)
+            .WithName("DeleteTrip");
 
         return endpoints;
     }

@@ -1,4 +1,4 @@
-import { requestJson } from '../../api/http';
+import { requestJson, requestVoid } from '../../api/http';
 import type { CreateTripRequest, Trip, TripListResponse, UpdateTripRequest } from './types';
 
 export function listTrips(signal?: AbortSignal) {
@@ -27,4 +27,8 @@ export function updateTrip(id: string, request: UpdateTripRequest) {
     },
     body: JSON.stringify(request),
   });
+}
+
+export function deleteTrip(id: string) {
+  return requestVoid(`/api/trips/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

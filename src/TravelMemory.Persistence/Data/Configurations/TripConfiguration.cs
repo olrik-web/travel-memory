@@ -19,6 +19,10 @@ internal sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
         builder.Property(value => value.StartDate).HasColumnType("date");
         builder.Property(value => value.EndDate).HasColumnType("date");
         builder.Property(value => value.CreatedAtUtc).HasPrecision(7).IsRequired();
+        builder.Property(value => value.DeletingSinceUtc).HasPrecision(7);
+        // A trip being deleted is gone for every query; only the deletion itself looks
+        // past this filter to resume.
+        builder.HasQueryFilter(value => value.DeletingSinceUtc == null);
         builder.HasIndex(value => new { value.OwnerId, value.StartDate, value.CreatedAtUtc })
             .IsDescending(false, true, true)
             .HasDatabaseName("IX_Trips_OwnerId_StartDate_CreatedAtUtc");

@@ -110,7 +110,7 @@ internal static class CreatePhotoImport
                     out var contentType,
                     out var extension);
                 var blobName =
-                    $"owners/{currentUser.OwnerId:N}/trips/{tripId:N}/imports/{batch.Id:N}/{Guid.NewGuid():N}{extension}";
+                    $"{PhotoStorageNames.TripPrefix(currentUser.OwnerId, tripId)}imports/{batch.Id:N}/{Guid.NewGuid():N}{extension}";
                 items.Add(
                     PhotoImportItem.Create(
                         currentUser.OwnerId,

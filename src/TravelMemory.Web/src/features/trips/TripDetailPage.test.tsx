@@ -18,7 +18,8 @@ function jsonResponse(body: unknown) {
 // Answers by URL and method, because the trip and its timeline load in parallel.
 function stubApi() {
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
-    const url = String(input);
+    const url =
+      typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (init?.method === 'DELETE') {
       return new Response(null, { status: 204 });
     }
@@ -62,6 +63,7 @@ function renderTrip() {
     <MemoryRouter initialEntries={[`/trips/${tripId}`]}>
       <Routes>
         <Route path="/trips/:tripId" element={<TripDetailPage />} />
+        <Route path="/trips" element={<p>Trip list opened</p>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -102,6 +104,30 @@ describe('photo deletion', () => {
     expect(screen.getByRole('button', { name: 'Delete krakow.jpg' })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith(
       expect.anything(),
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+});
+
+describe('trip deletion', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('deletes the trip once its title is typed and returns to the trip list', async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubApi();
+    renderTrip();
+
+    await user.click(await screen.findByRole('button', { name: 'Delete trip' }));
+    const confirmButton = screen.getByRole('button', { name: 'Delete permanently' });
+    expect(confirmButton).toBeDisabled();
+    await user.type(screen.getByLabelText(/to confirm/), 'Poland');
+    await user.click(confirmButton);
+
+    expect(await screen.findByText('Trip list opened')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/trips/${tripId}`,
       expect.objectContaining({ method: 'DELETE' }),
     );
   });

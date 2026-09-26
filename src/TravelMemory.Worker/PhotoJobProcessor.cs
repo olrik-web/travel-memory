@@ -287,7 +287,7 @@ internal sealed class PhotoJobProcessor(
             await GetTemporaryBlob(item).DownloadToAsync(sourcePath, cancellationToken);
             var processed = imageProcessor.Process(sourcePath, temporaryDirectory);
             var blobPrefix =
-                $"owners/{item.OwnerId:N}/trips/{item.TripId:N}/photos/{item.Id:N}";
+                $"{PhotoStorageNames.TripPrefix(item.OwnerId, item.TripId)}photos/{item.Id:N}";
             var webBlobName = $"{blobPrefix}/web.jpg";
             var thumbnailBlobName = $"{blobPrefix}/thumbnail.jpg";
 

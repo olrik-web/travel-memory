@@ -1,5 +1,5 @@
 import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createTrip, getTrip, listTrips, updateTrip } from './tripApi';
+import { createTrip, deleteTrip, getTrip, listTrips, updateTrip } from './tripApi';
 import type { CreateTripRequest, UpdateTripRequest } from './types';
 
 export const tripKeys = {
@@ -38,6 +38,19 @@ export function useUpdateTrip(tripId: string) {
     onSuccess: (trip) => {
       queryClient.setQueryData(tripKeys.detail(trip.id), trip);
       return queryClient.invalidateQueries({ queryKey: tripKeys.all });
+    },
+  });
+}
+
+export function useDeleteTrip() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (tripId: string) => deleteTrip(tripId),
+    onSuccess: (_, tripId) => {
+      // Drops the trip and everything cached under it, such as its photo timeline.
+      queryClient.removeQueries({ queryKey: tripKeys.detail(tripId) });
+      return queryClient.invalidateQueries({ queryKey: tripKeys.all, exact: true });
     },
   });
 }

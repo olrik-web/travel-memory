@@ -36,6 +36,10 @@ public sealed class Trip
 
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
+    // Set when a deletion starts. From then on the trip is hidden everywhere, and a
+    // deletion that stopped halfway is resumed by deleting the trip again.
+    public DateTimeOffset? DeletingSinceUtc { get; private set; }
+
     public static Trip Create(
         Guid ownerId,
         string? title,
@@ -74,6 +78,11 @@ public sealed class Trip
         Title = title!.Trim();
         StartDate = startDate;
         EndDate = endDate;
+    }
+
+    public void MarkDeleting(DateTimeOffset startedAt)
+    {
+        DeletingSinceUtc ??= startedAt.ToUniversalTime();
     }
 
     private static Dictionary<string, string[]> Validate(

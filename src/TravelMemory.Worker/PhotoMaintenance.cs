@@ -19,7 +19,6 @@ internal sealed class PhotoMaintenance(
     TimeProvider timeProvider)
 {
     private static readonly TimeSpan LostMessageTimeout = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan AbandonedJobTimeout = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan IncompleteUploadRetention = TimeSpan.FromHours(24);
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -32,7 +31,7 @@ internal sealed class PhotoMaintenance(
         var abandonedJobIds = await dbContext.PhotoProcessingJobs
             .Where(job =>
                 job.State == PhotoProcessingJobState.Processing
-                && job.UpdatedAtUtc <= now.Subtract(AbandonedJobTimeout))
+                && job.UpdatedAtUtc <= now.Subtract(PhotoProcessingJob.AbandonedAfter))
             .Select(job => job.Id)
             .Take(100)
             .ToListAsync(cancellationToken);
@@ -41,7 +40,7 @@ internal sealed class PhotoMaintenance(
             await using var jobScope = scopeFactory.CreateAsyncScope();
             await jobScope.ServiceProvider
                 .GetRequiredService<PhotoJobProcessor>()
-                .RecoverAbandonedAsync(jobId, AbandonedJobTimeout, cancellationToken);
+                .RecoverAbandonedAsync(jobId, PhotoProcessingJob.AbandonedAfter, cancellationToken);
         }
 
         var activeBatches = await dbContext.PhotoImportBatches

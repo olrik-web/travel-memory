@@ -150,6 +150,45 @@ internal sealed class PhotoStorage(
             .DeleteIfExistsAsync(cancellationToken: cancellationToken);
     }
 
+    // Deletes every original and derivative of a trip by its name prefix, so blobs the
+    // database no longer knows about, such as an upload that finished after its row was
+    // gone, are removed too. Deleting what is already gone is fine, so a retry is safe.
+    public async Task DeleteTripBlobsAsync(
+        Guid ownerId,
+        Guid tripId,
+        CancellationToken cancellationToken)
+    {
+        var prefix = PhotoStorageNames.TripPrefix(ownerId, tripId);
+        foreach (var containerName in new[]
+                 {
+                     PhotoStorageNames.TemporaryContainer,
+                     PhotoStorageNames.PermanentContainer,
+                 })
+        {
+            var container = blobServiceClient.GetBlobContainerClient(containerName);
+            var blobNames = new List<string>();
+            await foreach (var blob in container.GetBlobsAsync(
+                               BlobTraits.None,
+                               BlobStates.None,
+                               prefix,
+                               cancellationToken))
+            {
+                blobNames.Add(blob.Name);
+            }
+
+            await Parallel.ForEachAsync(
+                blobNames,
+                new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = 16,
+                    CancellationToken = cancellationToken,
+                },
+                async (blobName, token) => await container
+                    .GetBlobClient(blobName)
+                    .DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots, cancellationToken: token));
+        }
+    }
+
     public Task EnqueueAsync(PhotoProcessingJob job, CancellationToken cancellationToken)
     {
         var message = JsonSerializer.Serialize(new PhotoQueueMessage(job.Id, job.TraceParent));

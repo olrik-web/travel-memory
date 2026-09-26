@@ -129,6 +129,43 @@ resource blobContainers 'Microsoft.Storage/storageAccounts/blobServices/containe
   }
 ]
 
+// A safety net for originals the database no longer knows about, such as an upload a
+// browser finished after its trip was deleted. Failed originals are kept for 7 days at
+// most, so nothing older than 8 days in this container is still needed. Lifecycle
+// management itself is free.
+resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
+  parent: storage
+  name: 'default'
+  properties: {
+    policy: {
+      rules: [
+        {
+          name: 'expire-stray-originals'
+          enabled: true
+          type: 'Lifecycle'
+          definition: {
+            filters: {
+              blobTypes: [
+                'blockBlob'
+              ]
+              prefixMatch: [
+                'photo-imports/'
+              ]
+            }
+            actions: {
+              baseBlob: {
+                delete: {
+                  daysAfterModificationGreaterThan: 8
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+
 resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-05-01' = {
   parent: storage
   name: 'default'
