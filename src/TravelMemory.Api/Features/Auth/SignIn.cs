@@ -13,8 +13,10 @@ internal static class SignIn
 
     // Only same-site paths are allowed, so the sign-in flow cannot be used as an open
     // redirect to another site ("//host" and "/\host" are protocol-relative in browsers).
+    // Control characters are rejected too, because browsers strip tabs and newlines from
+    // URLs, which turns "/\t/host" into "//host".
     internal static string ToLocalUrl(string? returnUrl) =>
-        returnUrl is ['/', not '/' and not '\\', ..] or "/"
+        returnUrl is ['/', not '/' and not '\\', ..] or "/" && !returnUrl.Any(char.IsControl)
             ? returnUrl
             : "/";
 }
