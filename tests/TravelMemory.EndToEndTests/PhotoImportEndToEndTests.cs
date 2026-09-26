@@ -17,7 +17,9 @@ public sealed class PhotoImportEndToEndTests
 {
     private static readonly Uri WebOrigin = new("http://localhost:5173");
     private static readonly TimeSpan StartupTimeout = TimeSpan.FromMinutes(10);
-    private static readonly TimeSpan SqlServerStartTimeout = TimeSpan.FromMinutes(4);
+    // All SQL Server starts together fit in the startup timeout (3 × 3 of 10 minutes), so
+    // giving up on SQL Server is reported before the startup as a whole times out.
+    private static readonly TimeSpan SqlServerStartTimeout = TimeSpan.FromMinutes(3);
     private const int MaxSqlServerStarts = 3;
     private static readonly TimeSpan ProcessingTimeout = TimeSpan.FromMinutes(2);
 
@@ -40,9 +42,19 @@ public sealed class PhotoImportEndToEndTests
         using var startup = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         startup.CancelAfter(StartupTimeout);
         // Starting waits for SQL Server, so it is watched, and restarted if needed, while
-        // the application starts rather than afterwards.
-        var sqlServerStarted = WaitForSqlServerAsync(app, startup.Token);
-        await app.StartAsync(startup.Token);
+        // the application starts rather than afterwards. If the watcher gives up, it stops
+        // the start as well, and its reason is what the test reports.
+        var sqlServerStarted = WatchSqlServerAsync(app, startup);
+        try
+        {
+            await app.StartAsync(startup.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            await sqlServerStarted;
+            throw;
+        }
+
         await sqlServerStarted;
         await app.ResourceNotifications.WaitForResourceHealthyAsync("api", startup.Token);
         await app.ResourceNotifications.WaitForResourceAsync(
@@ -142,6 +154,23 @@ public sealed class PhotoImportEndToEndTests
     // SQL Server 2025 sometimes crashes while its container starts on CI runners (see
     // SqlServerFixture). Everything else waits for it, so restart it a few times instead
     // of waiting for the whole startup timeout, and name it when it keeps failing.
+    // With dependents waiting on SQL Server, nothing else would stop the start when the
+    // watcher gives up, so it cancels the start before reporting why.
+    private static async Task WatchSqlServerAsync(
+        DistributedApplication app,
+        CancellationTokenSource startup)
+    {
+        try
+        {
+            await WaitForSqlServerAsync(app, startup.Token);
+        }
+        catch when (!startup.IsCancellationRequested)
+        {
+            await startup.CancelAsync();
+            throw;
+        }
+    }
+
     private static async Task WaitForSqlServerAsync(
         DistributedApplication app,
         CancellationToken cancellationToken)
