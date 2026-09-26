@@ -203,6 +203,8 @@ The HEIC choice was verified through a technical spike in
 ## Repository structure
 
 ```text
+infra/
+  main.bicep                    Azure resources for the deployment
 src/
   TravelMemory.AppHost/         Aspire resource graph and local Keycloak realm
   TravelMemory.Domain/          Trips, photo imports, jobs, and time semantics
@@ -233,10 +235,93 @@ docker volume rm <exact-volume-name-from-Aspire>
 > Use the exact volume name shown in the Aspire resource details. Do not use
 > `docker volume prune`, because it can delete data belonging to other local projects.
 
+## Deploy to Azure
+
+The Azure deployment is designed to cost close to nothing for a rarely used personal app:
+everything scales to zero or runs on a free offer, and nothing has a fixed monthly price.
+The first request after an idle period is slow while the containers start and the
+database resumes.
+
+| Resource | Why it costs (almost) nothing |
+|---|---|
+| Container Apps (Consumption): API, worker, maintenance and migration jobs | Scale to zero; the monthly free grant covers light use |
+| Azure SQL serverless database on the free offer | 100,000 vCore seconds and 32 GB a month, then it pauses instead of billing |
+| Storage account (Blob and Queue) | Pay per use, a few cents at most |
+| Log Analytics | Ingestion capped at 0.1 GB a day, inside the free allowance |
+| Images on GitHub Container Registry | Free for public images, instead of Azure Container Registry |
+| Microsoft Entra External ID | Free for the first 50,000 monthly active users |
+
+The worker is woken by the queue and goes back to zero replicas when it is empty, so it
+does not keep the database awake. A scheduled job runs its maintenance once a day, and the
+deploy workflow runs migrations as a one-off job. A budget on the resource group emails
+at 50 % and 100 % of the budget and when the forecast exceeds it. It is an alert, not a
+cap.
+
+`infra/main.bicep` describes all Azure resources. The **Deploy** workflow builds the
+images, deploys the template, and applies migrations. It only runs when started by hand.
+
+### One-time setup
+
+Portal labels change now and then, so some names may differ slightly.
+
+1. **Resource group.** In **Resource groups → Create**, create `rg-travel-memory` in your
+   subscription, for example in `North Europe`. In **Subscriptions → your subscription →
+   Resource providers**, register `Microsoft.App`, `Microsoft.OperationalInsights`,
+   `Microsoft.Sql`, `Microsoft.Storage`, and `Microsoft.ManagedIdentity` if they are not
+   registered yet.
+2. **Deploy identity for GitHub Actions** (in your usual Microsoft Entra tenant):
+   - In **App registrations → New registration**, create `travel-memory-github-deploy` as
+     single tenant, without a redirect URI. Note its client id and tenant id.
+   - In **Certificates & secrets → Federated credentials → Add credential**, choose
+     *GitHub Actions deploying Azure resources*, organization `olrik-web`, repository
+     `travel-memory`, and entity type *Environment* with the name `production`. No client
+     secret is needed, and only the deploy job can use it.
+   - In **rg-travel-memory → Access control (IAM)**, assign it `Contributor` and
+     `Role Based Access Control Administrator`, so it can create resources and grant the
+     app identity access to storage. Both roles apply to this resource group only.
+3. **Sign-in with Microsoft Entra External ID:**
+   - In **Microsoft Entra External ID → Create a tenant**, create an *External* tenant,
+     for example named `Travel Memory` with a unique domain name. Link it to your
+     subscription and `rg-travel-memory`.
+   - In that tenant, in **App registrations → New registration**, create
+     `Travel Memory web` for accounts in this organizational directory only. Note its
+     client id.
+   - In **Certificates & secrets**, create a client secret and copy its value right away.
+   - In **External Identities → User flows**, create a sign-up and sign-in flow with *Email
+     with password* that collects *Display Name*, and add `Travel Memory web` to it.
+4. **GitHub.** In **Settings → Environments**, create `production` with these environment
+   variables:
+
+   | Variable | Value |
+   |---|---|
+   | `AZURE_CLIENT_ID` | Client id of `travel-memory-github-deploy` |
+   | `AZURE_TENANT_ID` | Your usual tenant id |
+   | `AZURE_SUBSCRIPTION_ID` | Your subscription id |
+   | `OIDC_AUTHORITY` | `https://<external-domain>.ciamlogin.com/<external-tenant-id>/v2.0` |
+   | `OIDC_CLIENT_ID` | Client id of `Travel Memory web` |
+   | `BUDGET_ALERT_EMAIL` | Where budget alerts go |
+
+   Add the web app's client secret as the environment secret `OIDC_CLIENT_SECRET`.
+
+### Deploy
+
+1. In **Actions → Deploy**, choose **Run workflow**.
+2. **After the first run only:**
+   - New GitHub packages are private. In your profile's **Packages**, open
+     `travel-memory-api` and `travel-memory-worker` and change their visibility to
+     *Public* in **Package settings**, then run the workflow again. Container Apps pulls
+     the images without credentials.
+   - Add `<app-url>/api/auth/callback` and `<app-url>/api/auth/signed-out` as *Web*
+     redirect URIs of `Travel Memory web`. Entra only returns to registered URLs, including
+     after sign-out. The workflow summary shows the app URL.
+
+The migration job may finish just after the new revision starts. With a single user and
+scale to zero, that short window is accepted.
+
 ## Explicitly out of scope
 
 GPX/FIT and GPS matching, SignalR, AI captioning/embeddings, weather, family sharing,
-trip/photo editing and deletion, offline trip data, and Azure deployment are not part of
-the implemented slices.
+trip/photo editing and deletion, and offline trip data are not part of the implemented
+slices.
 
 For the recommended order of future work, see [ROADMAP.md](ROADMAP.md).

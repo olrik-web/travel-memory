@@ -486,3 +486,6 @@ dist/
 
 # The JavaScript SDK (.esproj) writes obj\Debug\ with Windows separators on Linux
 obj\\*/
+
+# The deploy workflow copies the SPA build here before publishing the API image.
+src/TravelMemory.Api/wwwroot/
