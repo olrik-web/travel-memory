@@ -68,6 +68,14 @@ jobs:
 
       - run: dotnet test --project tests/TravelMemory.EndToEndTests
 
+  # Compiling the Bicep template catches syntax and type errors before a deployment.
+  infra:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - run: az bicep build --file infra/main.bicep --stdout > /dev/null
+
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 15

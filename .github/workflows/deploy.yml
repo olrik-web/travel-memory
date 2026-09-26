@@ -1,0 +1,122 @@
+name: Deploy
+
+# Started by hand from the Actions tab, so a merge never deploys by surprise and no images
+# are pushed that nothing runs. See "Deploy to Azure" in the README for the one-time setup.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  RESOURCE_GROUP: rg-travel-memory
+  API_IMAGE: ghcr.io/olrik-web/travel-memory-api
+  WORKER_IMAGE: ghcr.io/olrik-web/travel-memory-worker
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: src/TravelMemory.Web/package-lock.json
+
+      - run: npm ci && npm run build
+        working-directory: src/TravelMemory.Web
+
+      # In Azure the API serves the SPA from wwwroot; locally the Vite dev server does.
+      - run: cp -r src/TravelMemory.Web/dist src/TravelMemory.Api/wwwroot
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The .NET SDK builds and pushes the images itself, so no Dockerfile is needed.
+      - run: >
+          dotnet publish src/TravelMemory.Api --configuration Release -t:PublishContainer
+          -p:ContainerRegistry=ghcr.io
+          -p:ContainerRepository=olrik-web/travel-memory-api
+          -p:ContainerImageTags='"${{ github.sha }};latest"'
+
+      - run: >
+          dotnet publish src/TravelMemory.Worker --configuration Release -t:PublishContainer
+          -p:ContainerRegistry=ghcr.io
+          -p:ContainerRepository=olrik-web/travel-memory-worker
+          -p:ContainerImageTags='"${{ github.sha }};latest"'
+
+  deploy:
+    needs: images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The federated credential only trusts this environment, and its variables and secret
+    # live here.
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy infrastructure
+        env:
+          OIDC_CLIENT_SECRET: ${{ secrets.OIDC_CLIENT_SECRET }}
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "travel-memory-${{ github.run_number }}" \
+            --template-file infra/main.bicep \
+            --parameters \
+              apiImage="$API_IMAGE:${{ github.sha }}" \
+              workerImage="$WORKER_IMAGE:${{ github.sha }}" \
+              oidcAuthority="${{ vars.OIDC_AUTHORITY }}" \
+              oidcClientId="${{ vars.OIDC_CLIENT_ID }}" \
+              oidcClientSecret="$OIDC_CLIENT_SECRET" \
+              budgetContactEmail="${{ vars.BUDGET_ALERT_EMAIL }}" \
+            --query properties.outputs --output json > outputs.json
+
+      # Runs inside Azure with the app identity, so the database firewall stays closed to
+      # GitHub's runners. The new revision may start just before the migration finishes;
+      # with one user and scale to zero that window is accepted.
+      - name: Apply database migrations
+        run: |
+          az config set extension.use_dynamic_install=yes_without_prompt
+          job=$(jq -r .migrationJobName.value outputs.json)
+          execution=$(az containerapp job start --resource-group "$RESOURCE_GROUP" --name "$job" --query name --output tsv)
+          for attempt in $(seq 1 60); do
+            status=$(az containerapp job execution show --resource-group "$RESOURCE_GROUP" --name "$job" --job-execution-name "$execution" --query properties.status --output tsv)
+            echo "Migration $execution: $status"
+            case "$status" in
+              Succeeded) exit 0 ;;
+              Failed|Stopped|Degraded) exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "The migration did not finish within 10 minutes."
+          exit 1
+
+      - name: Summary
+        run: echo "Deployed to $(jq -r .apiUrl.value outputs.json)" >> "$GITHUB_STEP_SUMMARY"
