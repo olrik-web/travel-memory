@@ -59,7 +59,7 @@ references them where they belong to a milestone.
 | V3a GPX tracks on a map | **Candidate** | Import GPX tracks and show them on a trip map | Streaming parsing, spatial data, map rendering |
 | V3b photo positioning | **Candidate** | Explainably match photos to track positions with manual correction | Time/timezone modelling, provenance, domain logic |
 | V3c FIT import | **Candidate** | Import FIT files through the same track pipeline | Binary formats, pipeline extensibility |
-| Trip and photo editing and deletion | **Candidate** | Edit trips, delete photos and trips with verifiable blob cleanup | Consistency across SQL and storage, cancellation |
+| Trip and photo editing and deletion | **Recommended next** | Edit trips, delete photos and trips with verifiable blob cleanup | Consistency across SQL and storage, cancellation |
 | Richer memories and context | **Candidate** | Notes, timeline events, weather, gap detection, and editable summaries | Event modelling, external APIs, caching |
 | AI-assisted recall and search | **Candidate** | Optional, provenance-aware generation and search with strict cost controls | Microsoft.Extensions.AI, embeddings, SQL vector |
 | Privacy and production hardening | **Candidate** | Export, backups, alerting, and recovery procedures | Operations, observability, lifecycle policies |
@@ -150,6 +150,42 @@ rejects the entire import ([#53]).
 - backup/restore drills and production alerting beyond a cost alert
 - custom domains or CDN
 
+## Recommended next: Trip and photo editing and deletion
+
+### Intended outcome
+
+The owner can fix a trip's title and dates, remove single photos, and delete a whole trip.
+Deletion removes derivatives, originals, and metadata verifiably, never races the worker,
+and never leaves orphaned blobs. This comes before V3 because it is needed before real
+daily use: without it, a mistaken import cannot be cleaned up.
+
+### Proposed scope
+
+- Edit a trip's title and dates with the same rules as creating one ([#56]).
+- Delete a photo: derivatives first, then the row, so a failure can only leave a broken
+  photo that the next attempt removes, never an unknown blob ([#57]).
+- Delete a trip with its photos, imports, and jobs: refuse while a photo is processing,
+  hide the trip and cancel pending jobs in one transaction, delete every blob under the
+  trip's prefix in both containers, then the rows. An interrupted deletion completes when
+  retried. A storage lifecycle rule in Azure removes stray originals after 8 days ([#58]).
+
+Deletion runs in the API request rather than as a worker job: with blob batch deletes,
+even a 500-photo trip takes seconds, and every step is idempotent.
+
+### Exit criteria
+
+- A trip's title and dates can be changed, with the same validation as creating.
+- After deleting a photo or a trip, no row and no blob of it remains, and deleting it again
+  changes nothing.
+- A trip cannot be deleted while one of its photos is processing, and a deletion never
+  leaves the worker writing blobs for a trip that no longer exists.
+
+### Explicit non-goals
+
+- undo, a trash bin, or delayed deletion; deletion is permanent after a confirmation
+- bulk selection of photos across trips
+- editing photo metadata such as capture time or caption
+
 ## Candidate: V3 tracks and photo positioning
 
 ### Intended outcome
@@ -216,13 +252,6 @@ completed, used, and learned from before the next starts.
 ## Subsequent milestone candidates
 
 These are deliberately outcome-oriented candidates, not a fixed task backlog.
-
-### Trip and photo editing and deletion
-
-Allow editing trip title and dates, deleting individual photos, and deleting a whole trip.
-Deletion must remove derivatives and metadata verifiably, cancel or complete pending jobs
-safely, and never leave orphaned blobs. This can be done before, between, or after the V3
-increments, but should come before real daily use.
 
 ### Notes and richer timeline events
 
@@ -325,3 +354,6 @@ The following items are intentionally **exploratory**, not promised milestones:
 [#49]: https://github.com/olrik-web/travel-memory/issues/49
 [#51]: https://github.com/olrik-web/travel-memory/issues/51
 [#53]: https://github.com/olrik-web/travel-memory/issues/53
+[#56]: https://github.com/olrik-web/travel-memory/issues/56
+[#57]: https://github.com/olrik-web/travel-memory/issues/57
+[#58]: https://github.com/olrik-web/travel-memory/issues/58

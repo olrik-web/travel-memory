@@ -1,8 +1,10 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { TripForm } from './TripForm';
+import { useCreateTrip } from './tripQueries';
 
 export function NewTripPage() {
   const navigate = useNavigate();
+  const createTrip = useCreateTrip();
 
   return (
     <main className="page page-narrow">
@@ -13,7 +15,14 @@ export function NewTripPage() {
         <p className="eyebrow">New trip memory</p>
         <h1>Create a trip</h1>
         <p className="lede">Start with the essentials. The rest of the memories can come later.</p>
-        <TripForm onCreated={(tripId) => void navigate(`/trips/${tripId}`)} />
+        <TripForm
+          submitLabel="Create trip"
+          isSubmitting={createTrip.isPending}
+          onSubmit={async (request) => {
+            const trip = await createTrip.mutateAsync(request);
+            await navigate(`/trips/${trip.id}`);
+          }}
+        />
       </section>
     </main>
   );

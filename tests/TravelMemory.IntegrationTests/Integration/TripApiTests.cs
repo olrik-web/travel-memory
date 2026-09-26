@@ -79,6 +79,50 @@ public sealed class TripApiTests(SqlServerFixture sqlServer) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Update_changes_an_owned_trip_and_hides_others()
+    {
+        TripResponse trip;
+        using (var ownerFactory = CreateFactory(FirstOwnerId))
+        using (var ownerClient = ownerFactory.CreateClient())
+        {
+            var created = await ownerClient.PostAsJsonAsync(
+                "/api/trips/",
+                new CreateTripRequest("Poland", null, null));
+            trip = Assert.IsType<TripResponse>(
+                await created.Content.ReadFromJsonAsync<TripResponse>());
+
+            var updated = await ownerClient.PutAsJsonAsync(
+                $"/api/trips/{trip.Id}",
+                new UpdateTripRequest(
+                    "Summer in Poland",
+                    new DateOnly(2026, 7, 11),
+                    new DateOnly(2026, 7, 21)));
+            Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
+
+            var opened = Assert.IsType<TripResponse>(
+                await ownerClient.GetFromJsonAsync<TripResponse>($"/api/trips/{trip.Id}"));
+            Assert.Equal("Summer in Poland", opened.Title);
+            Assert.Equal(new DateOnly(2026, 7, 11), opened.StartDate);
+            Assert.Equal(new DateOnly(2026, 7, 21), opened.EndDate);
+
+            var invalid = await ownerClient.PutAsJsonAsync(
+                $"/api/trips/{trip.Id}",
+                new UpdateTripRequest(
+                    "Summer in Poland",
+                    new DateOnly(2026, 7, 21),
+                    new DateOnly(2026, 7, 11)));
+            Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        }
+
+        using var otherFactory = CreateFactory(SecondOwnerId);
+        using var otherClient = otherFactory.CreateClient();
+        var hidden = await otherClient.PutAsJsonAsync(
+            $"/api/trips/{trip.Id}",
+            new UpdateTripRequest("Taken over", null, null));
+        Assert.Equal(HttpStatusCode.NotFound, hidden.StatusCode);
+    }
+
+    [Fact]
     public async Task Create_returns_validation_problem_for_an_invalid_date_range()
     {
         using var factory = CreateFactory(FirstOwnerId);

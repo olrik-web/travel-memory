@@ -1,6 +1,6 @@
 import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createTrip, getTrip, listTrips } from './tripApi';
-import type { CreateTripRequest } from './types';
+import { createTrip, getTrip, listTrips, updateTrip } from './tripApi';
+import type { CreateTripRequest, UpdateTripRequest } from './types';
 
 export const tripKeys = {
   all: ['trips'] as const,
@@ -27,5 +27,17 @@ export function useCreateTrip() {
   return useMutation({
     mutationFn: (request: CreateTripRequest) => createTrip(request),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: tripKeys.all }),
+  });
+}
+
+export function useUpdateTrip(tripId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (request: UpdateTripRequest) => updateTrip(tripId, request),
+    onSuccess: (trip) => {
+      queryClient.setQueryData(tripKeys.detail(trip.id), trip);
+      return queryClient.invalidateQueries({ queryKey: tripKeys.all });
+    },
   });
 }

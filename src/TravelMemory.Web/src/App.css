@@ -295,6 +295,8 @@ h2 {
 
 .detail-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   border-top: 1px solid #e3ddcf;
   padding-top: 2rem;
 }

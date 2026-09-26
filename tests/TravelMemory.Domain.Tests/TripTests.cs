@@ -24,6 +24,33 @@ public sealed class TripTests
     }
 
     [Fact]
+    public void Update_changes_the_title_and_dates()
+    {
+        var trip = Trip.Create(OwnerId, "Poland", null, null, CreatedAt);
+
+        trip.Update("  Summer in Poland  ", new DateOnly(2026, 7, 11), new DateOnly(2026, 7, 21));
+
+        Assert.Equal("Summer in Poland", trip.Title);
+        Assert.Equal(new DateOnly(2026, 7, 11), trip.StartDate);
+        Assert.Equal(new DateOnly(2026, 7, 21), trip.EndDate);
+        Assert.Equal(CreatedAt.ToUniversalTime(), trip.CreatedAtUtc);
+    }
+
+    [Fact]
+    public void Update_rejects_invalid_values_and_keeps_the_trip_unchanged()
+    {
+        var trip = Trip.Create(OwnerId, "Poland", null, null, CreatedAt);
+
+        var exception = Assert.Throws<TripValidationException>(
+            () => trip.Update(" ", new DateOnly(2026, 7, 21), new DateOnly(2026, 7, 11)));
+
+        Assert.Contains("title", exception.Errors.Keys);
+        Assert.Contains("endDate", exception.Errors.Keys);
+        Assert.Equal("Poland", trip.Title);
+        Assert.Null(trip.StartDate);
+    }
+
+    [Fact]
     public void Create_accepts_missing_dates()
     {
         var trip = Trip.Create(OwnerId, "A trip without dates", null, null, CreatedAt);

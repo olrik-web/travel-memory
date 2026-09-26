@@ -15,6 +15,9 @@ internal static class TripEndpoints
             .WithName("ListTrips");
         trips.MapGet("/{id}", GetTrip.HandleAsync)
             .WithName("GetTrip");
+        trips.MapPut("/{id}", UpdateTrip.HandleAsync)
+            .WithName("UpdateTrip")
+            .ProducesValidationProblem();
 
         return endpoints;
     }
