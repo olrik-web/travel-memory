@@ -10,6 +10,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/TravelMemory.Domain.Tests/TravelMemory.Domain.Tests.csproj" />
+    <Project Path="tests/TravelMemory.EndToEndTests/TravelMemory.EndToEndTests.csproj" />
     <Project Path="tests/TravelMemory.IntegrationTests/TravelMemory.IntegrationTests.csproj" />
   </Folder>
 </Solution>

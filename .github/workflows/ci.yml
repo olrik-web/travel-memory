@@ -33,6 +33,41 @@ jobs:
       # which uses the Docker engine preinstalled on ubuntu-latest.
       - run: dotnet test --project tests/TravelMemory.IntegrationTests --no-build --configuration Release
 
+  # Runs the real Aspire resource graph (SQL Server, Azurite, Keycloak, API, worker, and the
+  # Vite dev server) in its own job, so the slower container startup does not hold up the
+  # other checks.
+  end-to-end:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: src/TravelMemory.Web/package-lock.json
+
+      # The AppHost starts the web app with `npm run dev`.
+      - run: npm ci
+        working-directory: src/TravelMemory.Web
+
+      # Aspire checks the API's health over https, so the development certificate must be
+      # trusted. OpenSSL, and therefore .NET, on Linux reads extra CAs from SSL_CERT_DIR.
+      - name: Trust the development certificate
+        run: |
+          dotnet dev-certs https
+          mkdir -p "$RUNNER_TEMP/dev-certs"
+          dotnet dev-certs https --export-path "$RUNNER_TEMP/dev-certs/aspnetcore.pem" --format PEM
+          openssl rehash "$RUNNER_TEMP/dev-certs"
+          echo "SSL_CERT_DIR=$RUNNER_TEMP/dev-certs:/etc/ssl/certs" >> "$GITHUB_ENV"
+
+      - run: dotnet test --project tests/TravelMemory.EndToEndTests
+
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 15

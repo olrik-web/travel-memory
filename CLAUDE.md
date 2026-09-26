@@ -16,6 +16,7 @@ on Azurite Blob/Queue storage, and a React 19 + TypeScript + Vite PWA.
 dotnet build
 dotnet test --project tests/TravelMemory.Domain.Tests        # fast, no Docker
 dotnet test --project tests/TravelMemory.IntegrationTests    # needs Docker (SQL Server + Azurite containers)
+dotnet test --project tests/TravelMemory.EndToEndTests       # whole Aspire graph; needs Docker, npm ci, ports 5173/8180
 npm --prefix src/TravelMemory.Web run lint
 npm --prefix src/TravelMemory.Web run typecheck
 npm --prefix src/TravelMemory.Web test
