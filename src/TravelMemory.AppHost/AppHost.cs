@@ -1,14 +1,28 @@
+using Microsoft.Extensions.Configuration;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
+// Local development keeps its data in named volumes. The end-to-end test turns them off,
+// so each run starts empty and leaves no trips behind in the development database.
+var useDataVolumes = builder.Configuration.GetValue("TravelMemory:UseDataVolumes", true);
+
 var sql = builder.AddSqlServer("sql")
-    .WithImageTag("2025-latest")
-    .WithDataVolume();
+    .WithImageTag("2025-latest");
+if (useDataVolumes)
+{
+    sql.WithDataVolume();
+}
+
 var database = sql.AddDatabase("travelmemory");
 
 var storage = builder.AddAzureStorage("storage")
     .RunAsEmulator(emulator =>
     {
-        emulator.WithDataVolume();
+        if (useDataVolumes)
+        {
+            emulator.WithDataVolume();
+        }
+
         emulator.WithArgs("--skipApiVersionCheck");
     });
 var blobs = storage.AddBlobs("blobs");
