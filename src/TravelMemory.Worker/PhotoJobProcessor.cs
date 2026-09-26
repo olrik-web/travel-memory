@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using Azure;
 using Azure.Storage.Blobs;
@@ -37,6 +38,13 @@ internal sealed class PhotoJobProcessor(
         {
             return;
         }
+
+        // One span per job stage, under the span for the queue message that triggered it.
+        using var activity = WorkerTelemetry.ActivitySource.StartActivity($"{job.Kind} photo");
+        activity?.SetTag("travelmemory.photo_job.id", job.Id);
+        activity?.SetTag("travelmemory.photo_job.kind", job.Kind.ToString());
+        activity?.SetTag("travelmemory.photo_job.attempt", job.AttemptCount);
+        activity?.SetTag("travelmemory.photo_import_item.id", job.ImportItemId);
 
         var item = await dbContext.PhotoImportItems.SingleAsync(
             value => value.Id == job.ImportItemId,
@@ -382,6 +390,8 @@ internal sealed class PhotoJobProcessor(
             "Photo processing job {JobId} failed on attempt {AttemptCount}.",
             job.Id,
             job.AttemptCount);
+        Activity.Current?.SetStatus(ActivityStatusCode.Error, exception.Code);
+        Activity.Current?.AddException(exception);
         var now = timeProvider.GetUtcNow();
         var delay = TimeSpan.FromSeconds(Math.Min(
             Math.Pow(2, job.AttemptCount) * 5,
@@ -450,7 +460,8 @@ internal sealed class PhotoJobProcessor(
                 PhotoProcessingJob.Create(
                     item,
                     PhotoProcessingJobKind.Cleanup,
-                    timeProvider.GetUtcNow()));
+                    timeProvider.GetUtcNow(),
+                    PhotoJobTracing.CurrentTraceParent));
         }
     }
 

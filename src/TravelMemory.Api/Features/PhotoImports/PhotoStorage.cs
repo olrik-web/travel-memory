@@ -4,6 +4,7 @@ using Azure.Storage.Blobs.Models;
 using Azure.Storage.Sas;
 using Azure.Storage.Queues;
 using System.Text.Json;
+using TravelMemory.Domain.Photos;
 using TravelMemory.Persistence.Photos;
 
 namespace TravelMemory.Api.Features.PhotoImports;
@@ -120,9 +121,9 @@ internal sealed class PhotoStorage(
         }
     }
 
-    public Task EnqueueAsync(Guid jobId, CancellationToken cancellationToken)
+    public Task EnqueueAsync(PhotoProcessingJob job, CancellationToken cancellationToken)
     {
-        var message = JsonSerializer.Serialize(new PhotoQueueMessage(jobId));
+        var message = JsonSerializer.Serialize(new PhotoQueueMessage(job.Id, job.TraceParent));
         return queueServiceClient
             .GetQueueClient(PhotoStorageNames.ProcessingQueue)
             .SendMessageAsync(message, cancellationToken);

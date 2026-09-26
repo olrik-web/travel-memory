@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Azure;
 using Azure.Storage.Blobs;
@@ -184,6 +185,19 @@ internal sealed class PhotoQueueWorker(
             return;
         }
 
+        // Continues the trace of the operation that created the job, such as the API request
+        // that completed the upload. Without a valid trace parent, the span starts a new trace.
+        ActivityContext.TryParse(payload.TraceParent, traceState: null, out var parent);
+        using var activity = WorkerTelemetry.ActivitySource.StartActivity(
+            "receive photo job",
+            ActivityKind.Consumer,
+            parent);
+        activity?.SetTag("messaging.system", "azure_storage_queue");
+        activity?.SetTag("messaging.destination.name", PhotoStorageNames.ProcessingQueue);
+        activity?.SetTag("messaging.message.id", message.MessageId);
+        activity?.SetTag("messaging.azure_storage_queue.dequeue_count", message.DequeueCount);
+        activity?.SetTag("travelmemory.photo_job.id", payload.JobId);
+
         try
         {
             await using var scope = scopeFactory.CreateAsyncScope();
@@ -288,7 +302,7 @@ internal sealed class PhotoQueueWorker(
         foreach (var job in jobs)
         {
             await Queue.SendMessageAsync(
-                JsonSerializer.Serialize(new PhotoQueueMessage(job.Id)),
+                JsonSerializer.Serialize(new PhotoQueueMessage(job.Id, job.TraceParent)),
                 cancellationToken);
         }
     }

@@ -3,6 +3,7 @@ namespace TravelMemory.Domain.Photos;
 public sealed class PhotoProcessingJob
 {
     public const int MaximumAttempts = 5;
+    public const int MaxTraceParentLength = 55;
 
     private PhotoProcessingJob()
     {
@@ -45,6 +46,11 @@ public sealed class PhotoProcessingJob
 
     public DateTimeOffset? LastDispatchedAtUtc { get; private set; }
 
+    // The W3C trace context of the operation that created or last reset the job. Every
+    // message for the job carries it, so retries, redispatches, and follow-up jobs continue
+    // that operation's trace instead of starting unrelated ones.
+    public string? TraceParent { get; private set; }
+
     public string? LastError { get; private set; }
 
     public DateTimeOffset CreatedAtUtc { get; private set; }
@@ -56,22 +62,29 @@ public sealed class PhotoProcessingJob
     public static PhotoProcessingJob Create(
         PhotoImportItem item,
         PhotoProcessingJobKind kind,
-        DateTimeOffset createdAt) =>
-        new(
+        DateTimeOffset createdAt,
+        string? traceParent)
+    {
+        var job = new PhotoProcessingJob(
             Guid.NewGuid(),
             item.OwnerId,
             item.ImportBatchId,
             item.Id,
             kind,
             createdAt);
+        job.TraceParent = ValidTraceParent(traceParent);
+        return job;
+    }
 
+    // A scheduled job runs long after the operation that scheduled it, so it starts its own
+    // trace rather than stretching that operation's trace over days.
     public static PhotoProcessingJob Schedule(
         PhotoImportItem item,
         PhotoProcessingJobKind kind,
         DateTimeOffset createdAt,
         DateTimeOffset availableAt)
     {
-        var job = Create(item, kind, createdAt);
+        var job = Create(item, kind, createdAt, traceParent: null);
         job.AvailableAtUtc = availableAt.ToUniversalTime();
         return job;
     }
@@ -126,13 +139,14 @@ public sealed class PhotoProcessingJob
         UpdatedAtUtc = failedAt.ToUniversalTime();
     }
 
-    public void ResetForManualRetry(DateTimeOffset resetAt)
+    public void ResetForManualRetry(DateTimeOffset resetAt, string? traceParent)
     {
         State = PhotoProcessingJobState.Pending;
         AttemptCount = 0;
         AvailableAtUtc = resetAt.ToUniversalTime();
         LastError = null;
         UpdatedAtUtc = resetAt.ToUniversalTime();
+        TraceParent = ValidTraceParent(traceParent);
     }
 
     public bool IsAbandoned(DateTimeOffset now, TimeSpan timeout) =>
@@ -152,4 +166,8 @@ public sealed class PhotoProcessingJob
         UpdatedAtUtc = recoveredAt.ToUniversalTime();
         return true;
     }
+
+    // Tracing is diagnostic only, so an unexpected format is dropped rather than rejected.
+    private static string? ValidTraceParent(string? traceParent) =>
+        traceParent?.Length <= MaxTraceParentLength ? traceParent : null;
 }

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using TravelMemory.Api.Auth;
 using TravelMemory.Domain.Photos;
 using TravelMemory.Persistence.Data;
+using TravelMemory.Persistence.Photos;
 
 namespace TravelMemory.Api.Features.PhotoImports;
 
@@ -53,7 +54,7 @@ internal static class RetryPhotoImportItem
             .Where(value => value.ImportBatchId == batchId)
             .ToListAsync(cancellationToken);
         var now = timeProvider.GetUtcNow();
-        job.ResetForManualRetry(now);
+        job.ResetForManualRetry(now, PhotoJobTracing.CurrentTraceParent);
         job.MarkDispatched(now);
 
         // The retained original is needed again, so cancel its scheduled expiry.

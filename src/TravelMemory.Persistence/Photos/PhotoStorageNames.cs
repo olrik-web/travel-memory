@@ -8,4 +8,5 @@ public static class PhotoStorageNames
     public const long MaximumFileSizeBytes = 100L * 1024 * 1024;
 }
 
-public sealed record PhotoQueueMessage(Guid JobId);
+// TraceParent is optional so that messages sent before it existed still deserialize.
+public sealed record PhotoQueueMessage(Guid JobId, string? TraceParent = null);

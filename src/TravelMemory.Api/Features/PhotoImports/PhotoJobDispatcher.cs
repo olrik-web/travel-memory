@@ -52,7 +52,7 @@ internal sealed class PhotoJobDispatcher(
     {
         try
         {
-            await storage.EnqueueAsync(job.Id, cancellationToken);
+            await storage.EnqueueAsync(job, cancellationToken);
             return true;
         }
         catch (RequestFailedException exception)
