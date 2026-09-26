@@ -60,9 +60,9 @@ The photo import slice adds:
 
 From the repository root:
 
-```powershell
+```sh
 dotnet tool restore
-npm ci --prefix "src\TravelMemory.Web"
+npm ci --prefix src/TravelMemory.Web
 aspire start --non-interactive
 ```
 
@@ -92,14 +92,14 @@ that each user only sees their own trips.
 
 ## Test and quality checks
 
-```powershell
-dotnet test --project "tests\TravelMemory.Domain.Tests"
-dotnet test --project "tests\TravelMemory.IntegrationTests"
-dotnet test --project "tests\TravelMemory.EndToEndTests"
-npm --prefix "src\TravelMemory.Web" run lint
-npm --prefix "src\TravelMemory.Web" run typecheck
-npm --prefix "src\TravelMemory.Web" test
-npm --prefix "src\TravelMemory.Web" run build
+```sh
+dotnet test --project tests/TravelMemory.Domain.Tests
+dotnet test --project tests/TravelMemory.IntegrationTests
+dotnet test --project tests/TravelMemory.EndToEndTests
+npm --prefix src/TravelMemory.Web run lint
+npm --prefix src/TravelMemory.Web run typecheck
+npm --prefix src/TravelMemory.Web test
+npm --prefix src/TravelMemory.Web run build
 ```
 
 The domain tests run without Docker. The integration tests use an ephemeral SQL Server
@@ -117,6 +117,25 @@ runs SQL Server and Azurite without data volumes (`TravelMemory:UseDataVolumes=f
 each run starts empty and leaves the local development data alone. If SQL Server crashes
 while its container starts, which SQL Server 2025 occasionally does on CI runners, the test
 restarts it up to twice before failing with a message that names it.
+
+The commands work in both bash and PowerShell, which accepts `/` in paths.
+
+## Database migrations
+
+Migrations live in `src/TravelMemory.Persistence/Data/Migrations` and are created with the
+local `dotnet-ef` tool. Adding one needs no database:
+
+```sh
+dotnet tool restore
+dotnet dotnet-ef migrations add <Name> --project src/TravelMemory.Persistence \
+  --startup-project src/TravelMemory.Persistence --output-dir Data/Migrations
+```
+
+The API applies pending migrations when it starts in Development, and the deploy workflow
+runs them as a job in Azure, so `database update` is rarely needed. Commands that connect to
+a database read its connection string from `TRAVELMEMORY_DESIGN_TIME_CONNECTION`, for
+example the `travelmemory` connection string shown in the Aspire dashboard. Without it,
+they stop with a message saying so.
 
 ## API
 
@@ -229,7 +248,7 @@ SQL Server and Azurite use named Docker volumes. Keycloak has no volume: the rea
 its test users are imported again on every start, and their fixed user ids keep each
 user mapped to the same owner. Stop the AppHost before resetting local data:
 
-```powershell
+```sh
 aspire stop --non-interactive
 docker volume ls
 docker volume rm <exact-volume-name-from-Aspire>
