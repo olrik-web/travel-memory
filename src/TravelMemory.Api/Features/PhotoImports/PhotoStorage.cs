@@ -15,6 +15,12 @@ internal sealed class PhotoStorage(
     TimeProvider timeProvider)
 {
     private static readonly TimeSpan SasLifetime = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan DelegationKeyLifetime = TimeSpan.FromHours(6);
+
+    // Shared by all requests, so a timeline with many photos costs at most one key request
+    // per few hours. Concurrent requests may each fetch a key when it expires; any of them
+    // is valid, so no lock is needed.
+    private UserDelegationKey? delegationKey;
 
     public async Task InitializeAsync(bool configureDevelopmentCors, CancellationToken cancellationToken)
     {
@@ -45,19 +51,35 @@ internal sealed class PhotoStorage(
         }
     }
 
-    public UploadGrantResponse CreateUploadGrant(string blobName)
+    public async Task<BlobSasSigner> GetSasSignerAsync(CancellationToken cancellationToken)
+    {
+        if (blobServiceClient.CanGenerateAccountSasUri)
+        {
+            return new BlobSasSigner(blobServiceClient.AccountName, delegationKey: null);
+        }
+
+        // A token must not outlive the key that signed it.
+        var now = timeProvider.GetUtcNow();
+        var key = delegationKey;
+        if (key is null || key.SignedExpiresOn < now.Add(SasLifetime).AddMinutes(1))
+        {
+            key = (await blobServiceClient.GetUserDelegationKeyAsync(
+                now.AddMinutes(-1),
+                now.Add(DelegationKeyLifetime),
+                cancellationToken)).Value;
+            delegationKey = key;
+        }
+
+        return new BlobSasSigner(blobServiceClient.AccountName, key);
+    }
+
+    public UploadGrantResponse CreateUploadGrant(BlobSasSigner signer, string blobName)
     {
         var now = timeProvider.GetUtcNow();
         var expiresAt = now.Add(SasLifetime);
         var blob = blobServiceClient
             .GetBlobContainerClient(PhotoStorageNames.TemporaryContainer)
             .GetBlobClient(blobName);
-
-        if (!blob.CanGenerateSasUri)
-        {
-            throw new InvalidOperationException(
-                "The configured Blob client cannot create upload SAS tokens.");
-        }
 
         var sas = new BlobSasBuilder
         {
@@ -66,26 +88,21 @@ internal sealed class PhotoStorage(
             Resource = "b",
             StartsOn = now.AddMinutes(-1),
             ExpiresOn = expiresAt,
-            Protocol = SasProtocol.HttpsAndHttp,
         };
         sas.SetPermissions(BlobSasPermissions.Create | BlobSasPermissions.Write);
 
-        return new UploadGrantResponse(blob.GenerateSasUri(sas), expiresAt);
+        return new UploadGrantResponse(signer.Sign(blob, sas), expiresAt);
     }
 
-    public (Uri Url, DateTimeOffset ExpiresAtUtc) CreateReadGrant(string blobName)
+    public (Uri Url, DateTimeOffset ExpiresAtUtc) CreateReadGrant(
+        BlobSasSigner signer,
+        string blobName)
     {
         var now = timeProvider.GetUtcNow();
         var expiresAt = now.Add(SasLifetime);
         var blob = blobServiceClient
             .GetBlobContainerClient(PhotoStorageNames.PermanentContainer)
             .GetBlobClient(blobName);
-
-        if (!blob.CanGenerateSasUri)
-        {
-            throw new InvalidOperationException(
-                "The configured Blob client cannot create read SAS tokens.");
-        }
 
         var sas = new BlobSasBuilder
         {
@@ -94,11 +111,10 @@ internal sealed class PhotoStorage(
             Resource = "b",
             StartsOn = now.AddMinutes(-1),
             ExpiresOn = expiresAt,
-            Protocol = SasProtocol.HttpsAndHttp,
         };
         sas.SetPermissions(BlobSasPermissions.Read);
 
-        return (blob.GenerateSasUri(sas), expiresAt);
+        return (signer.Sign(blob, sas), expiresAt);
     }
 
     public async Task<bool> VerifyUploadAsync(

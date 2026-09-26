@@ -115,5 +115,5 @@ internal static class CompletePhotoUpload
                 batch,
                 items,
                 storage,
-                includeUploadGrants: false));
+                uploadGrantSigner: null));
 }

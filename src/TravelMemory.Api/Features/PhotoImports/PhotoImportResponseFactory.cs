@@ -8,7 +8,7 @@ internal static class PhotoImportResponseFactory
         PhotoImportBatch batch,
         IReadOnlyCollection<PhotoImportItem> items,
         PhotoStorage storage,
-        bool includeUploadGrants)
+        BlobSasSigner? uploadGrantSigner)
     {
         var responses = items
             .OrderBy(item => item.CreatedAtUtc)
@@ -16,9 +16,10 @@ internal static class PhotoImportResponseFactory
             .Select(item =>
             {
                 UploadGrantResponse? grant = null;
-                if (includeUploadGrants && item.State == PhotoImportItemState.AwaitingUpload)
+                if (uploadGrantSigner is not null
+                    && item.State == PhotoImportItemState.AwaitingUpload)
                 {
-                    grant = storage.CreateUploadGrant(item.TemporaryBlobName);
+                    grant = storage.CreateUploadGrant(uploadGrantSigner, item.TemporaryBlobName);
                 }
 
                 return new PhotoImportItemResponse(

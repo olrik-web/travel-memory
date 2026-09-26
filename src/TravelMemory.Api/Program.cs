@@ -1,10 +1,17 @@
 using System.Text.Json.Serialization;
+using Azure.Storage.Blobs;
 using Microsoft.EntityFrameworkCore;
+using TravelMemory.Api;
 using TravelMemory.Api.Auth;
 using TravelMemory.Api.Features.Auth;
 using TravelMemory.Api.Features.PhotoImports;
 using TravelMemory.Api.Features.Trips;
 using TravelMemory.Persistence.Data;
+
+if (args.Contains(DatabaseMigration.Argument))
+{
+    return await DatabaseMigration.RunAsync(args);
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -47,6 +54,11 @@ if (app.Environment.IsDevelopment())
     await using var scope = app.Services.CreateAsyncScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<TravelMemoryDbContext>();
     await dbContext.Database.MigrateAsync();
+    // In Azure the infrastructure deployment creates the containers and the queue.
+    await scope.ServiceProvider
+        .GetRequiredService<BlobServiceClient>()
+        .GetBlobContainerClient(AuthenticationExtensions.DataProtectionContainer)
+        .CreateIfNotExistsAsync();
     var photoStorage = scope.ServiceProvider.GetRequiredService<PhotoStorage>();
     await photoStorage.InitializeAsync(
         configureDevelopmentCors: true,
@@ -64,5 +76,6 @@ app.UseFileServer();
 app.MapFallbackToFile("/trips/{*path:nonfile}", "index.html");
 
 app.Run();
+return 0;
 
 public partial class Program;

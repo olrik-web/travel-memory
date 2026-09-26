@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using Azure.Storage.Blobs;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.Azurite;
 using TravelMemory.Api.Auth;
@@ -49,6 +51,23 @@ public sealed class AuthApiTests(SqlServerFixture sqlServer) : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.Equal("/", response.Headers.Location?.OriginalString);
         Assert.False(response.Headers.Contains("Set-Cookie"));
+    }
+
+    [Fact]
+    public async Task Keeps_data_protection_keys_in_blob_storage()
+    {
+        using var factory = CreateFactory(Guid.NewGuid());
+        using var client = factory.CreateClient();
+
+        // Protecting anything creates the key ring on first use, as signing in does.
+        factory.Services.GetRequiredService<IDataProtectionProvider>()
+            .CreateProtector("test")
+            .Protect("payload");
+
+        var keys = new BlobServiceClient(azurite.GetConnectionString())
+            .GetBlobContainerClient(AuthenticationExtensions.DataProtectionContainer)
+            .GetBlobClient("keys.xml");
+        Assert.True(await keys.ExistsAsync());
     }
 
     [Fact]

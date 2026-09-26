@@ -80,7 +80,7 @@ internal static class FinalizePhotoImport
                     batch,
                     items,
                     storage,
-                    includeUploadGrants: false));
+                    uploadGrantSigner: null));
         }
 
         if (batch.State != PhotoImportBatchState.ReadyForReview)
@@ -123,6 +123,6 @@ internal static class FinalizePhotoImport
                 batch,
                 items,
                 storage,
-                includeUploadGrants: false));
+                uploadGrantSigner: null));
     }
 }
