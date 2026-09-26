@@ -55,7 +55,7 @@ references them where they belong to a milestone.
 |---|---|---|---|
 | Foundation / V1 | **Complete** | A local Aspire application can create, list, and open owner-scoped trips | Aspire, Minimal API, EF Core, React/Vite |
 | V2 photo import | **Complete** | Robust JPEG/HEIC import produces a corrected chronological photo timeline | Blob SAS, queues, background workers, idempotency |
-| V2.5 hardening and foundations | **Recommended next** | The worker is robust, CI guards every change, a real identity provider is used, and the app runs in Azure | Resilient workers, CI, OIDC auth, Azure deployment |
+| V2.5 hardening and foundations | **Complete** | The worker is robust, CI guards every change, a real identity provider is used, and the app runs in Azure | Resilient workers, CI, OIDC auth, Azure deployment |
 | V3a GPX tracks on a map | **Candidate** | Import GPX tracks and show them on a trip map | Streaming parsing, spatial data, map rendering |
 | V3b photo positioning | **Candidate** | Explainably match photos to track positions with manual correction | Time/timezone modelling, provenance, domain logic |
 | V3c FIT import | **Candidate** | Import FIT files through the same track pipeline | Binary formats, pipeline extensibility |
@@ -92,7 +92,7 @@ references them where they belong to a milestone.
 - safe retention for failed originals and cleanup retries
 - chronological owner-scoped photo timeline
 
-## Recommended next: V2.5 hardening and foundations
+## Completed: V2.5 hardening and foundations
 
 ### Intended outcome
 
@@ -115,25 +115,33 @@ are the most transferable .NET skills and get harder to retrofit as the data mod
   .NET and frontend tests on every push ([#13]).
 - **Done:** add one end-to-end test with `Aspire.Hosting.Testing` that runs the real
   resource graph ([#10]).
-- **Done locally:** replace the Development authentication handler with OIDC through
-  Keycloak and the Aspire integration, keeping the `OwnerId` boundary unchanged ([#14],
-  [#5]). The hosted provider in Azure, Microsoft Entra External ID, is configured as part
-  of the deployment ([#45]).
-- Deploy to Azure Container Apps Consumption, Azure SQL, Blob Storage, and Storage Queue
-  with `aspire deploy` or `azd`. Use HTTPS-only SAS tokens and managed identity outside
-  Development, and define how migrations run there ([#15]).
-- Let the worker scale to zero between imports, woken by the queue, with its maintenance
-  run once a day by a scheduled job, so Azure SQL can pause and stay within the free offer
-  ([#44]).
+- **Done:** replace the Development authentication handler with OIDC, keeping the
+  `OwnerId` boundary unchanged: Keycloak through the Aspire integration locally and
+  Microsoft Entra External ID in Azure ([#14], [#5], [#45]).
+- **Done:** deploy to Azure Container Apps Consumption, Azure SQL (free offer), Blob
+  Storage, and Storage Queue with hand-written Bicep and a manually started GitHub Actions
+  workflow, because `aspire deploy` always adds a paid Azure Container Registry. Images
+  are public on GitHub Container Registry, SAS tokens are HTTPS-only and signed with a user
+  delegation key through a managed identity, and migrations run as a Container Apps job
+  ([#15], [#49], [#51]).
+- **Done:** let the worker scale to zero between imports, woken by the queue, with its
+  maintenance run once a day by a scheduled job, so Azure SQL can pause and stay within
+  the free offer ([#44]).
 
 ### Exit criteria
 
 - **Done:** the worker survives any single failing job or malformed message, and the
   failure is visible on the job and the import item.
 - **Done:** CI is green and required before merging to `main`.
-- A user signs in through OIDC locally and in Azure, and all data remains owner-scoped.
-- The deployed app can create a trip and import photos, and scales to zero when idle.
-- A documented monthly cost budget and alert exist.
+- **Done:** a user signs in through OIDC locally and in Azure, and all data remains
+  owner-scoped.
+- **Done:** the deployed app can create a trip and import photos, and scales to zero when
+  idle.
+- **Done:** a documented monthly cost budget and alert exist (see "Deploy to Azure" in the
+  README).
+
+Found during the first real use in Azure: selecting a whole phone folder with videos
+rejects the entire import ([#53]).
 
 ### Explicit V2.5 non-goals
 
@@ -314,3 +322,6 @@ The following items are intentionally **exploratory**, not promised milestones:
 [#33]: https://github.com/olrik-web/travel-memory/issues/33
 [#44]: https://github.com/olrik-web/travel-memory/issues/44
 [#45]: https://github.com/olrik-web/travel-memory/issues/45
+[#49]: https://github.com/olrik-web/travel-memory/issues/49
+[#51]: https://github.com/olrik-web/travel-memory/issues/51
+[#53]: https://github.com/olrik-web/travel-memory/issues/53
