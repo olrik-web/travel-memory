@@ -37,6 +37,10 @@ internal static class PhotoImportEndpoints
             .RequireAuthorization()
             .WithTags("Photos")
             .WithName("GetTripPhotoTimeline");
+        endpoints.MapDelete("/api/trips/{tripId:guid}/photos/{photoId:guid}", DeletePhoto.HandleAsync)
+            .RequireAuthorization()
+            .WithTags("Photos")
+            .WithName("DeletePhoto");
 
         return endpoints;
     }

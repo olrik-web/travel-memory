@@ -1,6 +1,7 @@
-import { skipToken, useQuery } from '@tanstack/react-query';
-import { getPhotoImport, getPhotoTimeline } from './photoImportApi';
+import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { deletePhoto, getPhotoImport, getPhotoTimeline } from './photoImportApi';
 import { isTerminalBatch } from './photoImportStatus';
+import type { PhotoTimeline } from './types';
 
 const statusPollIntervalMs = 1500;
 
@@ -13,6 +14,21 @@ export function usePhotoTimeline(tripId: string | undefined) {
   return useQuery({
     queryKey: photoKeys.timeline(tripId ?? ''),
     queryFn: tripId ? ({ signal }) => getPhotoTimeline(tripId, signal) : skipToken,
+  });
+}
+
+export function useDeletePhoto(tripId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (photoId: string) => deletePhoto(tripId, photoId),
+    onSuccess: (_, photoId) =>
+      queryClient.setQueryData<PhotoTimeline>(photoKeys.timeline(tripId), (timeline) =>
+        timeline && {
+          ...timeline,
+          items: timeline.items.filter((photo) => photo.id !== photoId),
+        },
+      ),
   });
 }
 

@@ -69,3 +69,10 @@ export function getPhotoTimeline(tripId: string, signal?: AbortSignal) {
     signal,
   });
 }
+
+export function deletePhoto(tripId: string, photoId: string) {
+  return requestVoid(
+    `/api/trips/${encodeURIComponent(tripId)}/photos/${encodeURIComponent(photoId)}`,
+    { method: 'DELETE' },
+  );
+}
