@@ -51,6 +51,18 @@ public sealed class TripTests
     }
 
     [Fact]
+    public void MarkDeleting_keeps_the_time_the_deletion_first_started()
+    {
+        var trip = Trip.Create(OwnerId, "Poland", null, null, CreatedAt);
+        var firstAttempt = CreatedAt.AddDays(1);
+
+        trip.MarkDeleting(firstAttempt);
+        trip.MarkDeleting(firstAttempt.AddMinutes(5));
+
+        Assert.Equal(firstAttempt.ToUniversalTime(), trip.DeletingSinceUtc);
+    }
+
+    [Fact]
     public void Create_accepts_missing_dates()
     {
         var trip = Trip.Create(OwnerId, "A trip without dates", null, null, CreatedAt);

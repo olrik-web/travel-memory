@@ -59,7 +59,7 @@ references them where they belong to a milestone.
 | V3a GPX tracks on a map | **Candidate** | Import GPX tracks and show them on a trip map | Streaming parsing, spatial data, map rendering |
 | V3b photo positioning | **Candidate** | Explainably match photos to track positions with manual correction | Time/timezone modelling, provenance, domain logic |
 | V3c FIT import | **Candidate** | Import FIT files through the same track pipeline | Binary formats, pipeline extensibility |
-| Trip and photo editing and deletion | **Recommended next** | Edit trips, delete photos and trips with verifiable blob cleanup | Consistency across SQL and storage, cancellation |
+| Trip and photo editing and deletion | **Complete** | Edit trips, delete photos and trips with verifiable blob cleanup | Consistency across SQL and storage, cancellation |
 | Richer memories and context | **Candidate** | Notes, timeline events, weather, gap detection, and editable summaries | Event modelling, external APIs, caching |
 | AI-assisted recall and search | **Candidate** | Optional, provenance-aware generation and search with strict cost controls | Microsoft.Extensions.AI, embeddings, SQL vector |
 | Privacy and production hardening | **Candidate** | Export, backups, alerting, and recovery procedures | Operations, observability, lifecycle policies |
@@ -150,7 +150,7 @@ rejects the entire import ([#53]).
 - backup/restore drills and production alerting beyond a cost alert
 - custom domains or CDN
 
-## Recommended next: Trip and photo editing and deletion
+## Completed: Trip and photo editing and deletion
 
 ### Intended outcome
 
@@ -161,24 +161,26 @@ daily use: without it, a mistaken import cannot be cleaned up.
 
 ### Proposed scope
 
-- Edit a trip's title and dates with the same rules as creating one ([#56]).
-- Delete a photo: derivatives first, then the row, so a failure can only leave a broken
+- **Done:** edit a trip's title and dates with the same rules as creating one ([#56]).
+- **Done:** delete a photo: derivatives first, then the row, so a failure can only leave a broken
   photo that the next attempt removes, never an unknown blob ([#57]).
-- Delete a trip with its photos, imports, and jobs: refuse while a photo is processing,
-  hide the trip and cancel pending jobs in one transaction, delete every blob under the
-  trip's prefix in both containers, then the rows. An interrupted deletion completes when
-  retried. A storage lifecycle rule in Azure removes stray originals after 8 days ([#58]).
+- **Done:** delete a trip with its photos, imports, and jobs: refuse while a photo is
+  processing, hide the trip and remove its jobs in one save, delete the photo and import
+  rows, then every blob under the trip's prefix in both containers, and the trip row last.
+  Endpoints refuse new work for a hidden trip, a worker that loses its rows removes the
+  derivatives it uploaded, and an interrupted deletion completes when retried. A storage
+  lifecycle rule in Azure removes stray originals after 8 days ([#58]).
 
-Deletion runs in the API request rather than as a worker job: with blob batch deletes,
+Deletion runs in the API request rather than as a worker job: with parallel blob deletes,
 even a 500-photo trip takes seconds, and every step is idempotent.
 
 ### Exit criteria
 
-- A trip's title and dates can be changed, with the same validation as creating.
-- After deleting a photo or a trip, no row and no blob of it remains, and deleting it again
-  changes nothing.
-- A trip cannot be deleted while one of its photos is processing, and a deletion never
-  leaves the worker writing blobs for a trip that no longer exists.
+- **Done:** a trip's title and dates can be changed, with the same validation as creating.
+- **Done:** after deleting a photo or a trip, no row and no blob of it remains, and deleting
+  it again changes nothing.
+- **Done:** a trip cannot be deleted while one of its photos is processing, and a deletion
+  never leaves the worker writing blobs for a trip that no longer exists.
 
 ### Explicit non-goals
 

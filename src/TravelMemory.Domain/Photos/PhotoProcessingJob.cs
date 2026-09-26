@@ -5,6 +5,10 @@ public sealed class PhotoProcessingJob
     public const int MaximumAttempts = 5;
     public const int MaxTraceParentLength = 55;
 
+    // A job still processing after this long has lost its worker: the maintenance cycle
+    // recovers it, and deleting its trip no longer waits for it.
+    public static readonly TimeSpan AbandonedAfter = TimeSpan.FromMinutes(10);
+
     private PhotoProcessingJob()
     {
     }

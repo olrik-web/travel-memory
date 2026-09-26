@@ -39,6 +39,11 @@ internal static class CompletePhotoUpload
         var batch = await dbContext.PhotoImportBatches.SingleAsync(
             value => value.Id == batchId && value.OwnerId == currentUser.OwnerId,
             cancellationToken);
+        // A trip that is being deleted accepts no new work (see DeleteTrip).
+        if (!await dbContext.Trips.AnyAsync(trip => trip.Id == batch.TripId, cancellationToken))
+        {
+            return TypedResults.NotFound();
+        }
         var items = await dbContext.PhotoImportItems
             .Where(value => value.ImportBatchId == batchId)
             .ToListAsync(cancellationToken);

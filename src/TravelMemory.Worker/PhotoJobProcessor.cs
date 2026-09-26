@@ -118,19 +118,30 @@ internal sealed class PhotoJobProcessor(
             // jobs are not retried automatically because they would most likely fail the same
             // way; the retained original lets the user retry them manually.
             dbContext.ChangeTracker.Clear();
-            job = await dbContext.PhotoProcessingJobs.SingleAsync(
+            var currentJob = await dbContext.PhotoProcessingJobs.SingleOrDefaultAsync(
                 value => value.Id == jobId,
                 cancellationToken);
-            item = await dbContext.PhotoImportItems.SingleAsync(
-                value => value.Id == job.ImportItemId,
+            var currentItem = await dbContext.PhotoImportItems.SingleOrDefaultAsync(
+                value => value.Id == item.Id,
                 cancellationToken);
-            batch = await dbContext.PhotoImportBatches.SingleAsync(
-                value => value.Id == job.ImportBatchId,
+            var currentBatch = await dbContext.PhotoImportBatches.SingleOrDefaultAsync(
+                value => value.Id == batch.Id,
                 cancellationToken);
+            if (currentJob is null || currentItem is null || currentBatch is null)
+            {
+                // Deleted while it was processing, together with its trip: there is no
+                // failure left to record.
+                logger.LogInformation(
+                    exception,
+                    "Photo processing job {JobId} was deleted while it was processing.",
+                    jobId);
+                return;
+            }
+
             await HandleFailureAsync(
-                job,
-                item,
-                batch,
+                currentJob,
+                currentItem,
+                currentBatch,
                 new PhotoProcessingException(
                     "unexpected_error",
                     "An unexpected error occurred while processing the photo. Try again later.",
@@ -287,7 +298,7 @@ internal sealed class PhotoJobProcessor(
             await GetTemporaryBlob(item).DownloadToAsync(sourcePath, cancellationToken);
             var processed = imageProcessor.Process(sourcePath, temporaryDirectory);
             var blobPrefix =
-                $"owners/{item.OwnerId:N}/trips/{item.TripId:N}/photos/{item.Id:N}";
+                $"{PhotoStorageNames.TripPrefix(item.OwnerId, item.TripId)}photos/{item.Id:N}";
             var webBlobName = $"{blobPrefix}/web.jpg";
             var thumbnailBlobName = $"{blobPrefix}/thumbnail.jpg";
 
@@ -350,6 +361,15 @@ internal sealed class PhotoJobProcessor(
                     timeProvider.GetUtcNow(),
                     timeProvider.GetUtcNow());
                 await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                // The photo could not be saved, for example because its trip was deleted
+                // meanwhile and took the item and job rows with it. Nothing would ever point
+                // to the derivatives just uploaded, so they go before the failure is handled.
+                await DeleteDerivativeAsync(webBlobName, cancellationToken);
+                await DeleteDerivativeAsync(thumbnailBlobName, cancellationToken);
+                throw;
             }
         }
         finally

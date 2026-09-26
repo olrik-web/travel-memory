@@ -50,6 +50,11 @@ internal static class RetryPhotoImportItem
         var batch = await dbContext.PhotoImportBatches.SingleAsync(
             value => value.Id == batchId,
             cancellationToken);
+        // A trip that is being deleted accepts no new work (see DeleteTrip).
+        if (!await dbContext.Trips.AnyAsync(trip => trip.Id == batch.TripId, cancellationToken))
+        {
+            return TypedResults.NotFound();
+        }
         var allItems = await dbContext.PhotoImportItems
             .Where(value => value.ImportBatchId == batchId)
             .ToListAsync(cancellationToken);

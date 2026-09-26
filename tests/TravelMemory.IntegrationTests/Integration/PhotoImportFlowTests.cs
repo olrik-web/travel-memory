@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Azure.Storage.Queues;
 using Microsoft.AspNetCore.WebUtilities;
@@ -813,6 +814,197 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
         Guid tripId) =>
         Assert.IsType<PhotoTimelineResponse>(
             await client.GetFromJsonAsync<PhotoTimelineResponse>($"/api/trips/{tripId}/photos"));
+
+    [Fact]
+    public async Task Deletes_a_trip_with_its_photos_imports_jobs_and_blobs()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        await ImportAndFinalizeAsync(client, trip.Id, "kept.jpg", CreateOrientedJpeg());
+        // A second import stays pending, with its original still in temporary storage.
+        var heic = await File.ReadAllBytesAsync(
+            Path.Combine(AppContext.BaseDirectory, "Fixtures", "sample.heic"));
+        var pendingBatch = await CreateSingleFileBatchAsync(
+            client,
+            trip.Id,
+            "pending.heic",
+            "image/heic",
+            heic);
+        await UploadAndCompleteAsync(client, pendingBatch.Id, Assert.Single(pendingBatch.Items), heic);
+        var prefix = PhotoStorageNames.TripPrefix(OwnerId, trip.Id);
+        Assert.Equal(3, await CountTripBlobsAsync(prefix));
+
+        using (var otherFactory = new TravelMemoryApplicationFactory(
+            databaseConnectionString,
+            azurite.GetConnectionString(),
+            Guid.NewGuid()))
+        using (var otherClient = otherFactory.CreateClient())
+        {
+            var foreign = await otherClient.DeleteAsync($"/api/trips/{trip.Id}");
+            Assert.Equal(HttpStatusCode.NotFound, foreign.StatusCode);
+        }
+
+        var deleted = await client.DeleteAsync($"/api/trips/{trip.Id}");
+
+        Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/trips/{trip.Id}")).StatusCode);
+        Assert.Equal(0, await CountTripBlobsAsync(prefix));
+        await AssertTripRowsGoneAsync(trip.Id);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync($"/api/trips/{trip.Id}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Refuses_to_delete_a_trip_while_a_photo_is_processing()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var jpeg = CreateOrientedJpeg();
+        var batch = await CreateSingleFileBatchAsync(client, trip.Id, "busy.jpg", "image/jpeg", jpeg);
+        var item = Assert.Single(batch.Items);
+        await UploadAndCompleteAsync(client, batch.Id, item, jpeg);
+        await using (var context = CreateDbContext())
+        {
+            var job = await context.PhotoProcessingJobs.SingleAsync(value => value.ImportItemId == item.Id);
+            Assert.True(job.TryStart(DateTimeOffset.UtcNow));
+            await context.SaveChangesAsync();
+        }
+
+        var response = await client.DeleteAsync($"/api/trips/{trip.Id}");
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/trips/{trip.Id}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Completes_a_trip_deletion_that_stopped_halfway()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        await ImportAndFinalizeAsync(client, trip.Id, "left-behind.jpg", CreateOrientedJpeg());
+        // As if an earlier deletion hid the trip and then stopped before cleaning up.
+        await using (var context = CreateDbContext())
+        {
+            var stored = await context.Trips.SingleAsync(value => value.Id == trip.Id);
+            stored.MarkDeleting(DateTimeOffset.UtcNow);
+            await context.SaveChangesAsync();
+        }
+
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/trips/{trip.Id}")).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await client.GetAsync($"/api/trips/{trip.Id}/photos")).StatusCode);
+
+        var deleted = await client.DeleteAsync($"/api/trips/{trip.Id}");
+
+        Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+        Assert.Equal(0, await CountTripBlobsAsync(PhotoStorageNames.TripPrefix(OwnerId, trip.Id)));
+        await AssertTripRowsGoneAsync(trip.Id);
+    }
+
+    private async Task<int> CountTripBlobsAsync(string prefix)
+    {
+        var blobService = new BlobServiceClient(azurite.GetConnectionString());
+        var count = 0;
+        foreach (var containerName in new[]
+                 {
+                     PhotoStorageNames.TemporaryContainer,
+                     PhotoStorageNames.PermanentContainer,
+                 })
+        {
+            await foreach (var _ in blobService
+                               .GetBlobContainerClient(containerName)
+                               .GetBlobsAsync(BlobTraits.None, BlobStates.None, prefix, CancellationToken.None))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private async Task AssertTripRowsGoneAsync(Guid tripId)
+    {
+        await using var context = CreateDbContext();
+        Assert.False(await context.Trips.IgnoreQueryFilters().AnyAsync(value => value.Id == tripId));
+        Assert.False(await context.Photos.AnyAsync(value => value.TripId == tripId));
+        Assert.False(await context.PhotoImportBatches.AnyAsync(value => value.TripId == tripId));
+        Assert.False(await context.PhotoImportItems.AnyAsync(value => value.TripId == tripId));
+        Assert.False(await context.PhotoProcessingJobs.AnyAsync(
+            job => !context.PhotoImportBatches.Any(batch => batch.Id == job.ImportBatchId)));
+    }
+
+    [Fact]
+    public async Task Removes_its_derivatives_when_the_trip_is_deleted_while_a_photo_processes()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var jpeg = CreateOrientedJpeg();
+        var batch = await CreateSingleFileBatchAsync(client, trip.Id, "racing.jpg", "image/jpeg", jpeg);
+        await UploadAndCompleteAsync(client, batch.Id, Assert.Single(batch.Items), jpeg);
+        await ProcessAllPendingJobsAsync();
+        var finalize = await client.PostAsJsonAsync(
+            $"/api/photo-imports/{batch.Id}/finalize",
+            new FinalizePhotoImportRequest(0));
+        Assert.Equal(HttpStatusCode.Accepted, finalize.StatusCode);
+        var processJobId = await GetProcessJobIdAsync(Assert.Single(batch.Items).Id);
+
+        // The trip's rows are deleted, as DeleteTrip does, after the worker uploaded the
+        // derivatives and just before it saves the photo.
+        await using (var context = CreateDbContext(
+            new BeforePhotoInsertInterceptor(async () =>
+            {
+                await using var deletion = CreateDbContext();
+                await deletion.Photos.Where(photo => photo.TripId == trip.Id).ExecuteDeleteAsync();
+                await deletion.PhotoImportBatches
+                    .Where(value => value.TripId == trip.Id)
+                    .ExecuteDeleteAsync();
+            })))
+        {
+            var processor = new PhotoJobProcessor(
+                context,
+                new BlobServiceClient(azurite.GetConnectionString()),
+                new PhotoImageProcessor(),
+                TimeProvider.System,
+                NullLogger<PhotoJobProcessor>.Instance);
+            await processor.ProcessAsync(processJobId, CancellationToken.None);
+        }
+
+        var derivatives = new BlobServiceClient(azurite.GetConnectionString())
+            .GetBlobContainerClient(PhotoStorageNames.PermanentContainer);
+        Assert.Equal(0, await CountBlobsAsync(derivatives));
+    }
+
+    [Fact]
+    public async Task Refuses_new_import_work_for_a_trip_that_is_being_deleted()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var jpeg = CreateOrientedJpeg();
+        var batch = await CreateSingleFileBatchAsync(client, trip.Id, "late.jpg", "image/jpeg", jpeg);
+        var item = Assert.Single(batch.Items);
+        await UploadAndCompleteAsync(client, batch.Id, item, jpeg);
+        await ProcessAllPendingJobsAsync();
+        await using (var context = CreateDbContext())
+        {
+            var stored = await context.Trips.SingleAsync(value => value.Id == trip.Id);
+            stored.MarkDeleting(DateTimeOffset.UtcNow);
+            await context.SaveChangesAsync();
+        }
+
+        var finalize = await client.PostAsJsonAsync(
+            $"/api/photo-imports/{batch.Id}/finalize",
+            new FinalizePhotoImportRequest(0));
+
+        Assert.Equal(HttpStatusCode.NotFound, finalize.StatusCode);
+        await using var verification = CreateDbContext();
+        Assert.False(await verification.PhotoProcessingJobs.AnyAsync(
+            job => job.ImportItemId == item.Id && job.Kind == PhotoProcessingJobKind.Process));
+    }
 
     private TravelMemoryApplicationFactory CreateFactory() =>
         new(databaseConnectionString, azurite.GetConnectionString(), OwnerId);

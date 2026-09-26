@@ -398,6 +398,39 @@ h2 {
   background: #f0eadf;
 }
 
+.button-danger {
+  color: #fffaf0;
+  background: #a4432a;
+}
+
+.button-danger:hover:not(:disabled) {
+  background: #8a3621;
+}
+
+.danger-zone {
+  display: grid;
+  gap: 1rem;
+  margin-top: 3rem;
+  border: 1px solid #e7c9bd;
+  border-radius: 1.5rem;
+  padding: 1.5rem;
+  background: rgb(255 250 245 / 82%);
+}
+
+.danger-zone h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.danger-zone p {
+  margin: 0;
+  color: #66716c;
+}
+
+.danger-zone .button-danger {
+  justify-self: start;
+}
+
 .page-import {
   width: min(100% - 2rem, 64rem);
 }
