@@ -16,6 +16,7 @@ internal sealed class PhotoQueueWorker(
     IServiceScopeFactory scopeFactory,
     BlobServiceClient blobServiceClient,
     QueueServiceClient queueServiceClient,
+    PhotoMaintenance maintenance,
     TimeProvider timeProvider,
     ILogger<PhotoQueueWorker> logger)
     : BackgroundService
@@ -23,13 +24,10 @@ internal sealed class PhotoQueueWorker(
     private static readonly TimeSpan EmptyQueueDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan FailedCycleDelay = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan VisibilityTimeout = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan RedispatchInterval = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan LostMessageTimeout = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan AbandonedJobTimeout = TimeSpan.FromMinutes(10);
-    private static readonly TimeSpan IncompleteUploadRetention = TimeSpan.FromHours(24);
+    private static readonly TimeSpan MaintenanceInterval = TimeSpan.FromSeconds(30);
     private const int MaximumConcurrency = 4;
     private const int MaximumDequeueCount = 5;
-    private DateTimeOffset nextDispatchAtUtc = DateTimeOffset.MinValue;
+    private DateTimeOffset nextMaintenanceAtUtc = DateTimeOffset.MinValue;
 
     private QueueClient Queue =>
         queueServiceClient.GetQueueClient(PhotoStorageNames.ProcessingQueue);
@@ -56,7 +54,7 @@ internal sealed class PhotoQueueWorker(
 
     private async Task RunCycleAsync(CancellationToken stoppingToken)
     {
-        await DispatchPendingJobsAsync(stoppingToken);
+        await RunMaintenanceWhenDueAsync(stoppingToken);
         var messages = (await Queue.ReceiveMessagesAsync(
             maxMessages: 8,
             visibilityTimeout: VisibilityTimeout,
@@ -76,48 +74,6 @@ internal sealed class PhotoQueueWorker(
                 CancellationToken = stoppingToken,
             },
             ProcessMessageAsync);
-    }
-
-    private async Task ExpireIncompleteUploadsAsync(CancellationToken cancellationToken)
-    {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<TravelMemoryDbContext>();
-        var now = timeProvider.GetUtcNow();
-        var cutoff = now.Subtract(IncompleteUploadRetention);
-        var items = await dbContext.PhotoImportItems
-            .Where(item =>
-                item.State == PhotoImportItemState.AwaitingUpload
-                && item.CreatedAtUtc <= cutoff)
-            .OrderBy(item => item.CreatedAtUtc)
-            .Take(100)
-            .ToListAsync(cancellationToken);
-
-        foreach (var item in items)
-        {
-            await blobServiceClient
-                .GetBlobContainerClient(PhotoStorageNames.TemporaryContainer)
-                .GetBlobClient(item.TemporaryBlobName)
-                .DeleteIfExistsAsync(cancellationToken: cancellationToken);
-            item.MarkFailed(
-                "upload_expired",
-                "The upload was not completed within 24 hours. Select the file again in a new import.",
-                now);
-            item.MarkFailedOriginalDeleted(now);
-        }
-
-        var batchIds = items.Select(item => item.ImportBatchId).Distinct().ToArray();
-        foreach (var batchId in batchIds)
-        {
-            var batch = await dbContext.PhotoImportBatches.SingleAsync(
-                value => value.Id == batchId,
-                cancellationToken);
-            var batchItems = await dbContext.PhotoImportItems
-                .Where(item => item.ImportBatchId == batchId)
-                .ToListAsync(cancellationToken);
-            batch.SetState(PhotoImportBatchStateCalculator.Calculate(batch, batchItems), now);
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async ValueTask ProcessMessageAsync(
@@ -229,82 +185,19 @@ internal sealed class PhotoQueueWorker(
         }
     }
 
-    internal async Task DispatchPendingJobsAsync(CancellationToken cancellationToken)
+    // The maintenance cycle also runs once a day as a scheduled job in Azure, where the
+    // worker scales to zero between imports. While the worker is awake, running it every
+    // few seconds dispatches the cleanup jobs and retries it creates without delay.
+    private async Task RunMaintenanceWhenDueAsync(CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
-        if (now < nextDispatchAtUtc)
+        if (now < nextMaintenanceAtUtc)
         {
             return;
         }
 
-        nextDispatchAtUtc = now.Add(RedispatchInterval);
-        await ExpireIncompleteUploadsAsync(cancellationToken);
-
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<TravelMemoryDbContext>();
-        var abandonedJobIds = await dbContext.PhotoProcessingJobs
-            .Where(job =>
-                job.State == PhotoProcessingJobState.Processing
-                && job.UpdatedAtUtc <= now.Subtract(AbandonedJobTimeout))
-            .Select(job => job.Id)
-            .Take(100)
-            .ToListAsync(cancellationToken);
-        foreach (var jobId in abandonedJobIds)
-        {
-            await using var jobScope = scopeFactory.CreateAsyncScope();
-            await jobScope.ServiceProvider
-                .GetRequiredService<PhotoJobProcessor>()
-                .RecoverAbandonedAsync(jobId, AbandonedJobTimeout, cancellationToken);
-        }
-
-        var activeBatches = await dbContext.PhotoImportBatches
-            .Where(batch =>
-                batch.State != PhotoImportBatchState.Completed
-                && batch.State != PhotoImportBatchState.CompletedWithErrors)
-            .OrderBy(batch => batch.UpdatedAtUtc)
-            .Take(100)
-            .ToListAsync(cancellationToken);
-        foreach (var batch in activeBatches)
-        {
-            var items = await dbContext.PhotoImportItems
-                .Where(item => item.ImportBatchId == batch.Id)
-                .ToListAsync(cancellationToken);
-            batch.SetState(PhotoImportBatchStateCalculator.Calculate(batch, items), now);
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        // A pending job needs a message if none was sent since it last became available
-        // (worker-created jobs, retries after a backoff, recovered jobs), or if the last one
-        // appears to be lost. A job waiting behind a backlog already has a message queued.
-        var lostBefore = now.Subtract(LostMessageTimeout);
-        var jobs = await dbContext.PhotoProcessingJobs
-            .Where(job =>
-                job.State == PhotoProcessingJobState.Pending
-                && job.AvailableAtUtc <= now
-                && (job.LastDispatchedAtUtc == null
-                    || job.LastDispatchedAtUtc < job.AvailableAtUtc
-                    || job.LastDispatchedAtUtc <= lostBefore))
-            .OrderBy(job => job.AvailableAtUtc)
-            .Take(100)
-            .ToListAsync(cancellationToken);
-
-        // Saving before sending means a failed send is only retried after the lost-message
-        // timeout, but a message is never sent for a job the database does not know was
-        // dispatched.
-        foreach (var job in jobs)
-        {
-            job.MarkDispatched(now);
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        foreach (var job in jobs)
-        {
-            await Queue.SendMessageAsync(
-                JsonSerializer.Serialize(new PhotoQueueMessage(job.Id, job.TraceParent)),
-                cancellationToken);
-        }
+        nextMaintenanceAtUtc = now.Add(MaintenanceInterval);
+        await maintenance.RunAsync(cancellationToken);
     }
 
     private async Task InitializeStorageAsync(CancellationToken cancellationToken)

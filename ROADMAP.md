@@ -118,10 +118,13 @@ are the most transferable .NET skills and get harder to retrofit as the data mod
 - **Done locally:** replace the Development authentication handler with OIDC through
   Keycloak and the Aspire integration, keeping the `OwnerId` boundary unchanged ([#14],
   [#5]). The hosted provider in Azure, Microsoft Entra External ID, is configured as part
-  of the deployment ([#15]).
+  of the deployment ([#45]).
 - Deploy to Azure Container Apps Consumption, Azure SQL, Blob Storage, and Storage Queue
   with `aspire deploy` or `azd`. Use HTTPS-only SAS tokens and managed identity outside
   Development, and define how migrations run there ([#15]).
+- Let the worker scale to zero between imports, woken by the queue, with its maintenance
+  run once a day by a scheduled job, so Azure SQL can pause and stay within the free offer
+  ([#44]).
 
 ### Exit criteria
 
@@ -309,3 +312,5 @@ The following items are intentionally **exploratory**, not promised milestones:
 [#15]: https://github.com/olrik-web/travel-memory/issues/15
 [#32]: https://github.com/olrik-web/travel-memory/issues/32
 [#33]: https://github.com/olrik-web/travel-memory/issues/33
+[#44]: https://github.com/olrik-web/travel-memory/issues/44
+[#45]: https://github.com/olrik-web/travel-memory/issues/45

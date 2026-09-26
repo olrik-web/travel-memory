@@ -431,19 +431,19 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
 
         var clock = new ManualTimeProvider(DateTimeOffset.UtcNow.AddMinutes(1));
         await using var workerServices = CreateWorkerServices(clock);
-        var worker = workerServices.GetRequiredService<PhotoQueueWorker>();
-        await worker.DispatchPendingJobsAsync(CancellationToken.None);
+        var maintenance = workerServices.GetRequiredService<PhotoMaintenance>();
+        await maintenance.RunAsync(CancellationToken.None);
         Assert.Equal(1, await CountQueueMessagesAsync(queue));
 
         // Once the message is lost, the job is dispatched again after the timeout, and the
         // new message again suppresses redispatch in the following cycle.
         await queue.ClearMessagesAsync();
         clock.UtcNow = clock.UtcNow.AddMinutes(5);
-        await worker.DispatchPendingJobsAsync(CancellationToken.None);
+        await maintenance.RunAsync(CancellationToken.None);
         Assert.Equal(1, await CountQueueMessagesAsync(queue));
 
         clock.UtcNow = clock.UtcNow.AddMinutes(1);
-        await worker.DispatchPendingJobsAsync(CancellationToken.None);
+        await maintenance.RunAsync(CancellationToken.None);
         Assert.Equal(1, await CountQueueMessagesAsync(queue));
     }
 
@@ -580,8 +580,8 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
 
         var clock = new ManualTimeProvider(startedAt.AddHours(2));
         await using var workerServices = CreateWorkerServices(clock);
-        await workerServices.GetRequiredService<PhotoQueueWorker>()
-            .DispatchPendingJobsAsync(CancellationToken.None);
+        await workerServices.GetRequiredService<PhotoMaintenance>()
+            .RunAsync(CancellationToken.None);
 
         var exhaustedItem = Assert.Single((await GetBatchAsync(client, batches[0].Id)).Items);
         Assert.Equal(nameof(PhotoImportItemState.Failed), exhaustedItem.State);
@@ -633,8 +633,8 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
         await queue.CreateAsync();
         var clock = new ManualTimeProvider(DateTimeOffset.UtcNow.AddMinutes(1));
         await using var workerServices = CreateWorkerServices(clock);
-        await workerServices.GetRequiredService<PhotoQueueWorker>()
-            .DispatchPendingJobsAsync(CancellationToken.None);
+        await workerServices.GetRequiredService<PhotoMaintenance>()
+            .RunAsync(CancellationToken.None);
 
         Assert.Equal(1, await CountQueueMessagesAsync(queue));
     }
@@ -711,6 +711,48 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
         Assert.Equal(received.SpanId, analyzed.ParentSpanId);
     }
 
+    [Fact]
+    public async Task Maintenance_mode_runs_one_cycle_and_exits()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var trip = await CreateTripAsync(client);
+        var jpeg = CreateOrientedJpeg();
+        var batch = await CreateSingleFileBatchAsync(
+            client,
+            trip.Id,
+            "waiting.jpg",
+            "image/jpeg",
+            jpeg);
+        var item = Assert.Single(batch.Items);
+        await UploadAndCompleteAsync(client, batch.Id, item, jpeg);
+
+        // Simulate an enqueue that failed while the worker was scaled to zero: the job is
+        // pending with no message, so only the maintenance run can dispatch it.
+        var queue = new QueueServiceClient(azurite.GetConnectionString())
+            .GetQueueClient(PhotoStorageNames.ProcessingQueue);
+        await queue.ClearMessagesAsync();
+        await using (var context = CreateDbContext())
+        {
+            var job = await context.PhotoProcessingJobs.SingleAsync(
+                value => value.ImportItemId == item.Id);
+            job.MarkDispatchFailed();
+            await context.SaveChangesAsync();
+        }
+
+        var exitCode = await WorkerProgram.Main(
+            [
+                WorkerProgram.MaintenanceArgument,
+                $"--ConnectionStrings:travelmemory={databaseConnectionString}",
+                $"--ConnectionStrings:blobs={azurite.GetConnectionString()}",
+                $"--ConnectionStrings:queues={azurite.GetConnectionString()}",
+            ])
+            .WaitAsync(TimeSpan.FromMinutes(1));
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(1, await CountQueueMessagesAsync(queue));
+    }
+
     private TravelMemoryApplicationFactory CreateFactory() =>
         new(databaseConnectionString, azurite.GetConnectionString(), OwnerId);
 
@@ -770,6 +812,7 @@ public sealed class PhotoImportFlowTests(SqlServerFixture sqlServer) : IAsyncLif
         services.AddSingleton(timeProvider ?? TimeProvider.System);
         services.AddSingleton<PhotoImageProcessor>();
         services.AddScoped<PhotoJobProcessor>();
+        services.AddSingleton<PhotoMaintenance>();
         services.AddSingleton<PhotoQueueWorker>();
         return services.BuildServiceProvider();
     }
